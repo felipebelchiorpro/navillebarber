@@ -966,16 +966,36 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
               <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">
                 Wallet ID da Barbearia (Asaas)
               </label>
-              <div className="flex items-center bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 focus-within:border-indigo-500 transition-colors">
-                <Wallet className="text-zinc-500 mr-2" size={13} />
+              <div
+                className={`flex items-center border rounded-lg px-2.5 py-1.5 transition-colors ${
+                  asaasWalletId
+                    ? 'bg-emerald-500/[0.04] border-emerald-500/30'
+                    : 'bg-white/[0.03] border-white/10'
+                }`}
+              >
+                <Wallet
+                  className={asaasWalletId ? 'text-emerald-400 mr-2 shrink-0' : 'text-zinc-500 mr-2 shrink-0'}
+                  size={13}
+                />
                 <input 
                   type="text"
-                  placeholder="wal_000000000000 ou ID da carteira"
+                  placeholder="wal_000000000000 (Gerado automaticamente ao salvar repasse)"
                   value={asaasWalletId}
-                  onChange={(e) => setAsaasWalletId(e.target.value)}
-                  className="w-full bg-transparent text-xs text-white outline-none font-mono placeholder:text-zinc-600"
+                  readOnly={true}
+                  className="w-full bg-transparent text-xs text-white outline-none font-mono placeholder:text-zinc-600 cursor-default select-all"
+                  title="Identificador exclusivo da subconta da barbearia no Asaas (somente leitura)"
                 />
+                {asaasWalletId && (
+                  <span className="text-[9px] font-bold font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 whitespace-nowrap ml-2">
+                    Conectado
+                  </span>
+                )}
               </div>
+              <p className="text-[9px] text-zinc-500 mt-1">
+                {asaasWalletId
+                  ? 'Subconta vinculada e pronta para receber rateios automáticos no Asaas.'
+                  : 'Criado e vinculado automaticamente via API Asaas ao salvar os dados de repasse abaixo.'}
+              </p>
             </div>
           </div>
 
