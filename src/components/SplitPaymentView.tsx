@@ -34,7 +34,9 @@ import {
   Gift,
   Trash2,
   Send,
-  Monitor
+  Monitor,
+  RotateCcw,
+  Key
 } from 'lucide-react';
 import { pb, Barbearia, Profissional, TerminalPagamento } from '../services/pocketbase';
 import { criarSubcontaAsaas, provisionarSubcontaBarbearia, calcularTaxaNavilleSplit } from '../lib/asaas';
@@ -513,6 +515,31 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
     }
   };
 
+  const handleResetarSubcontaBarbearia = async () => {
+    if (!selectedTenant) return;
+    if (!window.confirm(`Deseja resetar a subconta Asaas desta barbearia (${selectedTenant.asaas_wallet_id})? O vínculo atual será desfeito para que você possa gerar uma subconta nova na base REAL de Produção ao salvar o repasse.`)) {
+      return;
+    }
+
+    try {
+      setSavingRepasse(true);
+      const patch = {
+        asaas_wallet_id: null,
+        asaas_account_id: null,
+      };
+      const updated = await pb.collection('barbearias').update(selectedTenant.id, patch);
+      setSelectedTenant(updated);
+      setAsaasWalletId('');
+      if (onUpdateTenant) onUpdateTenant(updated);
+      dispararToast('sucesso', 'Subconta Asaas resetada! Ao preencher a chave Pix e clicar em "Salvar Repasse", a nova subconta será criada na base de Produção.', 'Reset Concluído');
+    } catch (err: any) {
+      console.error('Erro ao resetar subconta:', err);
+      dispararToast('erro', 'Falha ao resetar subconta no PocketBase.', 'Erro');
+    } finally {
+      setSavingRepasse(false);
+    }
+  };
+
   // Ações de Governança e Carência
   const handleRenovarCarenciaDias = async () => {
     if (!selectedTenant) return;
@@ -968,10 +995,21 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
                   Wallet ID da Barbearia (Asaas)
                 </label>
                 {(selectedTenant?.asaas_wallet_id || asaasWalletId) ? (
-                  <span className="text-[9px] font-bold font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1 shadow-sm">
-                    <CheckCircle2 size={10} />
-                    Gerado via Asaas
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-bold font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1 shadow-sm">
+                      <CheckCircle2 size={10} />
+                      Gerado via Asaas
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleResetarSubcontaBarbearia}
+                      disabled={savingRepasse}
+                      className="text-[9px] text-rose-400 hover:text-rose-300 font-bold bg-rose-500/10 hover:bg-rose-500/20 px-2 py-0.5 rounded border border-rose-500/30 transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      title="Resetar subconta para recriar na conta oficial de Produção"
+                    >
+                      <RotateCcw size={10} /> Resetar p/ Produção
+                    </button>
+                  </div>
                 ) : (
                   <span className="text-[9px] font-bold font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 flex items-center gap-1">
                     <Clock size={10} />

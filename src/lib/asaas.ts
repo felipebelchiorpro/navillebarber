@@ -45,28 +45,70 @@ export interface AssinaturaAsaas {
   [key: string]: any;
 }
 
-// 1. CREDENCIAIS DE PRODUÇÃO DO ASAAS (VARIÁVEIS DE AMBIENTE COOLIFY / .ENV)
+// 1. RESOLUÇÃO DE CREDENCIAIS DE PRODUÇÃO DO ASAAS
+export function obterAsaasApiKey(): string {
+  // 1. Chave configurada manualmente via interface (localStorage)
+  if (typeof window !== 'undefined') {
+    const override = localStorage.getItem('asaas_api_key_override') || localStorage.getItem('asaas_api_key');
+    if (override && override.trim()) return override.trim();
+  }
+
+  // 2. Chave de variável de ambiente (injetada no build do Vite/Docker)
+  const envKey =
+    (typeof process !== 'undefined' && process.env?.ASAAS_API_KEY) ||
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_API_KEY) ||
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_API_KEY_PRODUCTION) ||
+    (typeof process !== 'undefined' && process.env?.VITE_ASAAS_API_KEY) ||
+    '';
+
+  return envKey.trim();
+}
+
+export function obterAsaasMasterWalletId(): string {
+  if (typeof window !== 'undefined') {
+    const override = localStorage.getItem('asaas_master_wallet_override') || localStorage.getItem('asaas_master_wallet_id');
+    if (override && override.trim()) return override.trim();
+  }
+
+  const envMaster =
+    (typeof process !== 'undefined' && process.env?.ASAAS_MASTER_WALLET_ID) ||
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_MASTER_WALLET_ID) ||
+    '';
+
+  return envMaster.trim();
+}
+
+export function salvarCredenciaisAsaasEmMemoria(apiKey: string, masterWalletId?: string) {
+  if (typeof window !== 'undefined') {
+    if (apiKey) localStorage.setItem('asaas_api_key_override', apiKey.trim());
+    if (masterWalletId) localStorage.setItem('asaas_master_wallet_override', masterWalletId.trim());
+  }
+}
+
 export const ASAAS_URL =
   (typeof process !== 'undefined' && process.env?.ASAAS_API_URL) ||
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_API_URL) ||
   'https://api.asaas.com/v3';
 
-export const ASAAS_KEY =
-  (typeof process !== 'undefined' && process.env?.ASAAS_API_KEY) ||
-  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_API_KEY) ||
-  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_API_KEY_PRODUCTION) ||
-  '';
-
-export const MASTER_WALLET_ID =
-  (typeof process !== 'undefined' && process.env?.ASAAS_MASTER_WALLET_ID) ||
-  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_MASTER_WALLET_ID) ||
-  '';
+export const ASAAS_KEY = obterAsaasApiKey();
+export const MASTER_WALLET_ID = obterAsaasMasterWalletId();
 
 function getAsaasConfig() {
-  const apiKey = ASAAS_KEY;
+  let apiKey = obterAsaasApiKey();
+
+  // Se não encontrada e estiver no browser, tenta solicitar interativamente
+  if (!apiKey && typeof window !== 'undefined') {
+    const entrada = window.prompt(
+      'Configuração Asaas Produção:\n\nCole a sua Chave de API Oficial do Asaas ($aact_...):'
+    );
+    if (entrada && entrada.trim()) {
+      apiKey = entrada.trim();
+      salvarCredenciaisAsaasEmMemoria(apiKey);
+    }
+  }
 
   if (!apiKey) {
-    throw new Error('Chave de API do Asaas (ASAAS_API_KEY) não configurada nas variáveis de ambiente do servidor.');
+    throw new Error('Chave de API do Asaas (ASAAS_API_KEY) não configurada. Configure a chave no botão "Chave Asaas" do SuperAdmin ou no .env do servidor.');
   }
 
   // Em ambiente de desenvolvimento local Vite, usa o proxy configurado (/api/asaas) para contornar CORS
