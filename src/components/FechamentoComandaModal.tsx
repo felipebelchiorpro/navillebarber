@@ -68,6 +68,14 @@ export const FechamentoComandaModal: React.FC<FechamentoComandaModalProps> = ({
   const [clienteTelefone, setClienteTelefone] = useState<string>(agendamento?.cliente_telefone || '');
   const [barbeiroId, setBarbeiroId] = useState<string>(agendamento?.barbeiro_id || (profissionaisList[0]?.id || ''));
 
+  // Trava de segurança: barbeiro selecionado sem carteira Asaas
+  const barbeiroSelecionado = profissionaisList.find((p) => p.id === barbeiroId);
+  const barbeiroSemCarteira = Boolean(
+    barbeiroId &&
+    barbeiroId.trim() !== '' &&
+    (!barbeiroSelecionado?.asaas_wallet_id || !barbeiroSelecionado.asaas_wallet_id.trim())
+  );
+
   // Estados de Assinatura VIP
   const [clienteVip, setClienteVip] = useState<Cliente | null>(null);
   const [planoVip, setPlanoVip] = useState<PlanoAssinatura | null>(null);
