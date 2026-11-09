@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production build artifacts
+dist/
+dist-ssr/
+*.local
+
+# Environment variables & secrets (configure directly in Coolify/VPS)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor & OS files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# Agent & AI artifacts
+.agents/
+graphify-out/
+scratch/
+
+# PocketBase: Ignore Windows executable and temporary SQLite locks
+pocketbase/pocketbase.exe
+pocketbase/pb_data/*.db-shm
+pocketbase/pb_data/*.db-wal
+
+# Ensure PocketBase initial database and storage are tracked
+!pocketbase/pb_data/data.db
+!pocketbase/pb_data/auxiliary.db
+!pocketbase/pb_data/storage/

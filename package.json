@@ -1,0 +1,40 @@
+{
+  "name": "naville-barber",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "admin:server": "node server/superadmin_server.js"
+  },
+  "dependencies": {
+    "@number-flow/react": "^0.6.2",
+    "clsx": "^2.1.1",
+    "cors": "^2.8.6",
+    "d3-array": "^3.2.5",
+    "d3-scale": "^4.0.3",
+    "d3-shape": "^3.2.1",
+    "express": "^5.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "lucide-react": "^0.546.0",
+    "motion": "^14.9.0",
+    "pocketbase": "^0.28.1",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "react-router-dom": "^7.18.5",
+    "tailwind-merge": "^3.7.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vite-pwa/assets-generator": "^2.0.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "tailwindcss": "^4.3.4",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vite-plugin-pwa": "^2.0.0"
+  }
+}
