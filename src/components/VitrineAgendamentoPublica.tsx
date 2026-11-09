@@ -27,6 +27,7 @@ import {
   ChevronLeft,
   ExternalLink
 } from 'lucide-react';
+import { NavilleLogo } from './NavilleLogo';
 import {
   pb,
   Barbearia,
@@ -943,25 +944,22 @@ export const VitrineAgendamentoPublica: React.FC<VitrineAgendamentoPublicaProps>
             width: '2.1rem',
             height: '2.1rem',
             borderRadius: '0.6rem',
-            backgroundColor: '#111827',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
+            backgroundColor: 'rgba(245, 158, 11, 0.15)',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontWeight: 900,
-            color: '#F59E0B',
-            fontSize: '0.85rem',
-            letterSpacing: '-0.03em',
-            boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.1)'
+            padding: '0.35rem',
+            boxShadow: '0 0 10px rgba(245, 158, 11, 0.2)'
           }}>
-            NB
+            <NavilleLogo className="w-full h-full text-amber-500" />
           </div>
           <div>
             <h1 style={{ fontSize: '0.88rem', fontWeight: 900, color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.04em', margin: 0, lineHeight: 1 }}>
               NAVILLE BARBER
             </h1>
             <p style={{ fontSize: '0.7rem', color: '#9CA3AF', margin: '2px 0 0 0', fontWeight: 500 }}>
-              Agendamento Online
+              {barbearia?.nome ? `${barbearia.nome} • Agendamento` : 'Agendamento Online'}
             </p>
           </div>
         </div>

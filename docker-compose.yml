@@ -12,7 +12,7 @@ services:
 
   pocketbase:
     image: ghcr.io/muchobien/pocketbase:latest
-    command: ["serve", "--http=0.0.0.0:8090"]
+    command: ["serve", "--http=0.0.0.0:8090", "--dir=/pb/pb_data"]
     expose:
       - "8090"
     volumes:

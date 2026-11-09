@@ -77,14 +77,21 @@ const TenantRoute: React.FC<{
   const killSwitch = saasService.verificarKillSwitch(barbearia, faturas);
   const deveBloquearAcesso = killSwitch.isBloqueado && user?.papel !== 'superadmin';
 
-  const activeUser = user || devFallbackUser;
-  const activeBarb = barbearia || devFallbackBarb;
+  // Se não autenticado no subdomínio app.navillebarber.pro acessando a raiz, redireciona para a landing page oficial
+  if (!user) {
+    const isAppSubdomain = window.location.hostname.includes('app.navillebarber.pro');
+    const isRoot = window.location.pathname === '/' || window.location.pathname === '';
+    if (isAppSubdomain && isRoot) {
+      window.location.href = 'https://navillebarber.pro';
+      return null;
+    }
+  }
 
-  if (activeUser && !deveBloquearAcesso) {
+  if (user && !deveBloquearAcesso) {
     return (
       <DashboardAdminView
-        user={activeUser}
-        barbearia={activeBarb}
+        user={user}
+        barbearia={barbearia || devFallbackBarb}
         onBarbeariaUpdated={onBarbeariaUpdated}
         onLogout={onLogout}
         onOpenVitrine={(s) => navigate(`/b/${s}`)}
@@ -167,31 +174,25 @@ export const App: React.FC = () => {
             }
           }
         } else {
-          // Em ambiente local, realiza login inicial ou recupera barbearia padrão
-          try {
-            const { user: authUser, barbearia: authBarb } = await authService.login(
-              'dono@zerograu.com',
-              'Password123!'
-            );
-            setUser(authUser);
-            if (authBarb) {
-              setBarbearia(authBarb);
-              try {
-                const fats = await faturasService.list(authBarb.id);
-                setFaturas(fats);
-              } catch (e) {}
-            }
-          } catch (autoLoginErr) {
-            console.warn('Auto-login dev fallback:', autoLoginErr);
+          // Apenas em ambiente estritamente local (localhost/127.0.0.1) faz login mock
+          const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+          if (isLocalhost && import.meta.env.DEV) {
             try {
-              let barbFromDb: Barbearia | null = null;
-              try {
-                barbFromDb = await pb.collection('barbearias').getOne<Barbearia>('ca42u8j6x8o514w');
-              } catch {
-                barbFromDb = await pb.collection('barbearias').getFirstListItem<Barbearia>('');
+              const { user: authUser, barbearia: authBarb } = await authService.login(
+                'dono@zerograu.com',
+                'Password123!'
+              );
+              setUser(authUser);
+              if (authBarb) {
+                setBarbearia(authBarb);
+                try {
+                  const fats = await faturasService.list(authBarb.id);
+                  setFaturas(fats);
+                } catch (e) {}
               }
-              if (barbFromDb) setBarbearia(barbFromDb);
-            } catch (e) {}
+            } catch (autoLoginErr) {
+              console.warn('Auto-login dev fallback:', autoLoginErr);
+            }
           }
         }
       } catch (err) {
