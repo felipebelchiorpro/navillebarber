@@ -25,7 +25,17 @@ import {
   Layers,
   Gem,
   ChevronLeft,
-  ExternalLink
+  ChevronRight,
+  ExternalLink,
+  X,
+  ShieldCheck,
+  Check,
+  Lock,
+  CreditCard,
+  Gift,
+  Tag,
+  UserCheck,
+  BadgeCheck
 } from 'lucide-react';
 import { NavilleLogo } from './NavilleLogo';
 import {
@@ -40,6 +50,8 @@ import {
   ValidacaoVipResult,
   CategoriaServico,
   AssinaturaVip,
+  ClubePlano,
+  ClubeMembro,
   barbeariasService,
   servicosService,
   profissionaisService,
@@ -47,6 +59,8 @@ import {
   bloqueiosService,
   clientesService,
   planosService,
+  clubePlanosService,
+  clubeMembrosService,
   validarElegibilidadeVip,
   whatsappService
 } from '../services/pocketbase';
@@ -118,6 +132,75 @@ export const VitrineAgendamentoPublica: React.FC<VitrineAgendamentoPublicaProps>
   const [clienteVip, setClienteVip] = useState<Cliente | null>(null);
   const [planoVip, setPlanoVip] = useState<PlanoAssinatura | null>(null);
   const [vipResult, setVipResult] = useState<ValidacaoVipResult | null>(null);
+
+  // Clube de Assinaturas & Área de Membros (Módulo Clube de Assinaturas)
+  const [isClubeModalOpen, setIsClubeModalOpen] = useState<boolean>(false);
+  const [membroClube, setMembroClube] = useState<ClubeMembro | null>(null);
+  const [clubeTelefoneInput, setClubeTelefoneInput] = useState<string>('');
+  const [clubeNomeInput, setClubeNomeInput] = useState<string>('');
+  const [clubeLoading, setClubeLoading] = useState<boolean>(false);
+  const [clubeError, setClubeError] = useState<string | null>(null);
+  const [agendamentoVipAtivo, setAgendamentoVipAtivo] = useState<boolean>(false);
+
+  // Acessar Clube de Assinaturas & Área de Membros
+  const handleAcessarClube = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setClubeError(null);
+
+    const cleanPhone = clubeTelefoneInput.replace(/\D/g, '');
+    if (!cleanPhone || cleanPhone.length < 8) {
+      setClubeError('Informe um telefone válido para acessar o clube.');
+      return;
+    }
+
+    if (!barbearia?.id) return;
+
+    try {
+      setClubeLoading(true);
+      const membro = await clubeMembrosService.buscarMembro(barbearia.id, cleanPhone);
+
+      if (!membro) {
+        setClubeError('Assinante não encontrado com este número. Solicite seu cadastro no balcão da barbearia.');
+        return;
+      }
+
+      // Regra de validação: se status !== 'ativo', bloquear o acesso com alerta obrigatório:
+      // "Assinatura inativa ou cancelada. Regularize no balcão."
+      if (membro.status !== 'ativo') {
+        setClubeError('Assinatura inativa ou cancelada. Regularize no balcão.');
+        return;
+      }
+
+      // Se não tiver o plano expandido, carrega
+      if (!membro.expand?.plano && membro.plano) {
+        const p = await clubePlanosService.getOne(membro.plano);
+        if (p) {
+          membro.expand = { ...membro.expand, plano: p };
+        }
+      }
+
+      setMembroClube(membro);
+      setClubeError(null);
+      setAgendamentoVipAtivo(true);
+
+      // Sincroniza nome e telefone no agendamento
+      if (membro.nome && !clienteNome) setClienteNome(membro.nome);
+      if (membro.telefone && !clienteTelefone) setClienteTelefone(membro.telefone);
+    } catch (err: any) {
+      console.error('Erro ao consultar membro do clube:', err);
+      setClubeError('Não foi possível validar o acesso no momento.');
+    } finally {
+      setClubeLoading(false);
+    }
+  };
+
+  const handleSairClube = () => {
+    setMembroClube(null);
+    setAgendamentoVipAtivo(false);
+    setClubeError(null);
+    setClubeTelefoneInput('');
+    setClubeNomeInput('');
+  };
 
   // Etapa 5 & 6: Confirmação e Sucesso
   const [submitting, setSubmitting] = useState(false);
@@ -293,6 +376,33 @@ export const VitrineAgendamentoPublica: React.FC<VitrineAgendamentoPublicaProps>
     }
   }, [barbearia?.id, selectedDate, loadSlotsData]);
 
+  // Filtragem de profissionais elegíveis considerando o perfil VIP vs Público Geral
+  const barbeirosElegiveis = useMemo(() => {
+    if (membroClube || agendamentoVipAtivo) {
+      // No Agendamento VIP: listar apenas profissionais elegíveis ('hibrido_clube_geral' ou 'exclusivo_clube')
+      // omitindo barbeiros que atendem estritamente público avulso ('agendamento_geral' ou 'agenda')
+      return profissionais.filter(p =>
+        p.tipo_atendimento === 'hibrido_clube_geral' ||
+        p.tipo_atendimento === 'exclusivo_clube' ||
+        p.tipo_atendimento === 'ambos' ||
+        p.aceita_clube
+      );
+    } else {
+      // Público avulso: omitir barbeiros que são exclusivos do Clube
+      return profissionais.filter(p => p.tipo_atendimento !== 'exclusivo_clube');
+    }
+  }, [profissionais, membroClube, agendamentoVipAtivo]);
+
+  // Se o profissional selecionado não estiver mais elegível na lista, reseta para 'qualquer'
+  useEffect(() => {
+    if (selectedBarbeiroId !== 'qualquer') {
+      const existe = barbeirosElegiveis.some(p => p.id === selectedBarbeiroId);
+      if (!existe) {
+        setSelectedBarbeiroId('qualquer');
+      }
+    }
+  }, [barbeirosElegiveis, selectedBarbeiroId]);
+
   // Totais de serviços selecionados (Duração e Valor bruto)
   const { duracaoTotalMinutos, valorTotal, servicosNomes, servicosSelecionados } = useMemo(() => {
     const map = new Map(servicos.map(s => [s.id, s]));
@@ -417,7 +527,23 @@ export const VitrineAgendamentoPublica: React.FC<VitrineAgendamentoPublicaProps>
     const checkVip = async () => {
       setSearchingVip(true);
       try {
-        // Consulta primária na coleção 'assinaturas_vip'
+        // 1. Consulta prioritária na coleção 'clube_membros' (Módulo Clube de Assinaturas)
+        try {
+          const membroFound = await clubeMembrosService.buscarMembro(barbearia.id, digits);
+          if (membroFound && isCurrent) {
+            if (membroFound.status === 'ativo') {
+              setMembroClube(membroFound);
+              setAgendamentoVipAtivo(true);
+              if (!clienteNome.trim() && membroFound.nome) {
+                setClienteNome(membroFound.nome);
+              }
+            }
+          }
+        } catch (eClube) {
+          console.warn('Consulta em clube_membros:', eClube);
+        }
+
+        // 2. Consulta primária na coleção 'assinaturas_vip'
         try {
           const vipRecords = await pb.collection('assinaturas_vip').getFullList<AssinaturaVip>({
             filter: `barbearia = "${barbearia.id}" && cliente_telefone ~ "${digits}" && ativo = true`
@@ -982,6 +1108,20 @@ export const VitrineAgendamentoPublica: React.FC<VitrineAgendamentoPublicaProps>
               Painel
             </button>
           )}
+
+          {/* Botão de Destaque "Área VIP / Clube" */}
+          <button
+            type="button"
+            onClick={() => setIsClubeModalOpen(true)}
+            className="bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+          >
+            <Crown className="w-3.5 h-3.5 text-amber-400" />
+            <span>
+              {membroClube
+                ? `Membro ${membroClube.expand?.plano?.nome?.replace('Plano ', '') || 'VIP'}`
+                : 'Área VIP / Clube'}
+            </span>
+          </button>
 
           <div style={{
             display: 'flex',
@@ -1616,13 +1756,35 @@ export const VitrineAgendamentoPublica: React.FC<VitrineAgendamentoPublicaProps>
           </div>
 
           {/* 5. ETAPA 2: ESCOLHA O PROFISSIONAL */}
-          <div style={{ padding: '0 1rem', marginTop: '1.75rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+          <div id="sec-barbeiros" style={{ padding: '0 1rem', marginTop: '1.75rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 style={{ fontSize: '0.82rem', fontWeight: 900, letterSpacing: '0.05em', color: '#D1D5DB', textTransform: 'uppercase', margin: 0 }}>
-                2. ESCOLHA O PROFISSIONAL
+              <h3 style={{ fontSize: '0.82rem', fontWeight: 900, letterSpacing: '0.05em', color: '#D1D5DB', textTransform: 'uppercase', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span>2. ESCOLHA O PROFISSIONAL</span>
+                {(membroClube || agendamentoVipAtivo) && (
+                  <span className="bg-amber-500/20 text-amber-400 border border-amber-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Crown className="w-3 h-3" />
+                    VIP
+                  </span>
+                )}
               </h3>
               <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#E5A96E' }}>Primeiro Livre</span>
             </div>
+
+            {(membroClube || agendamentoVipAtivo) && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 text-amber-400 font-semibold">
+                  <Crown className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <span>Modo VIP • Listando apenas profissionais elegíveis ao Clube</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsClubeModalOpen(true)}
+                  className="text-amber-300 underline font-medium hover:text-amber-200 cursor-pointer text-[11px]"
+                >
+                  Ver Benefícios
+                </button>
+              </div>
+            )}
 
             <div style={{
               display: 'flex',
@@ -1657,9 +1819,12 @@ export const VitrineAgendamentoPublica: React.FC<VitrineAgendamentoPublicaProps>
                 <span style={{ fontSize: '0.65rem', color: '#6B7280', textAlign: 'center' }}>Mais rápido</span>
               </div>
 
-              {/* Barbeiros da Barbearia */}
-              {profissionais.map(prof => {
+              {/* Barbeiros Elegíveis da Barbearia */}
+              {barbeirosElegiveis.map(prof => {
                 const isSelected = selectedBarbeiroId === prof.id;
+                const isExclusivoClube = prof.tipo_atendimento === 'exclusivo_clube';
+                const isHibrido = prof.tipo_atendimento === 'hibrido_clube_geral' || prof.tipo_atendimento === 'ambos';
+
                 return (
                   <div
                     key={prof.id}
@@ -1669,20 +1834,53 @@ export const VitrineAgendamentoPublica: React.FC<VitrineAgendamentoPublicaProps>
                     }}
                     style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', flexShrink: 0, position: 'relative' }}
                   >
-                    <span style={{
-                      position: 'absolute',
-                      top: '-6px',
-                      zIndex: 10,
-                      fontSize: '0.58rem',
-                      fontWeight: 900,
-                      color: '#E9D5FF',
-                      backgroundColor: 'rgba(168, 85, 247, 0.5)',
-                      border: '1px solid rgba(168, 85, 247, 0.6)',
-                      padding: '0.1rem 0.4rem',
-                      borderRadius: '9999px'
-                    }}>
-                      ✦ Ambos
-                    </span>
+                    {isExclusivoClube ? (
+                      <span style={{
+                        position: 'absolute',
+                        top: '-6px',
+                        zIndex: 10,
+                        fontSize: '0.58rem',
+                        fontWeight: 900,
+                        color: '#FDE68A',
+                        backgroundColor: 'rgba(217, 119, 6, 0.75)',
+                        border: '1px solid rgba(245, 158, 11, 0.7)',
+                        padding: '0.1rem 0.4rem',
+                        borderRadius: '9999px',
+                        boxShadow: '0 0 8px rgba(245, 158, 11, 0.4)'
+                      }}>
+                        👑 Clube VIP
+                      </span>
+                    ) : isHibrido ? (
+                      <span style={{
+                        position: 'absolute',
+                        top: '-6px',
+                        zIndex: 10,
+                        fontSize: '0.58rem',
+                        fontWeight: 900,
+                        color: '#E9D5FF',
+                        backgroundColor: 'rgba(168, 85, 247, 0.5)',
+                        border: '1px solid rgba(168, 85, 247, 0.6)',
+                        padding: '0.1rem 0.4rem',
+                        borderRadius: '9999px'
+                      }}>
+                        ✦ Clube & Geral
+                      </span>
+                    ) : (
+                      <span style={{
+                        position: 'absolute',
+                        top: '-6px',
+                        zIndex: 10,
+                        fontSize: '0.58rem',
+                        fontWeight: 700,
+                        color: '#93C5FD',
+                        backgroundColor: 'rgba(30, 58, 138, 0.5)',
+                        border: '1px solid rgba(59, 130, 246, 0.5)',
+                        padding: '0.1rem 0.4rem',
+                        borderRadius: '9999px'
+                      }}>
+                        Geral
+                      </span>
+                    )}
                     <div style={{
                       width: '3.6rem',
                       height: '3.6rem',
@@ -2465,6 +2663,327 @@ export const VitrineAgendamentoPublica: React.FC<VitrineAgendamentoPublicaProps>
             </button>
           </div>
         </main>
+      )}
+
+      {/* GAVETA LATERAL / MODAL VIP: CLUBE DE ASSINATURAS & ÁREA DE MEMBROS */}
+      {isClubeModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4"
+          onClick={() => setIsClubeModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md bg-slate-900/95 border border-amber-500/30 rounded-2xl p-4 sm:p-5 shadow-2xl relative overflow-hidden flex flex-col max-h-[92vh]"
+            style={{
+              boxShadow: '0 25px 60px rgba(0, 0, 0, 0.9), 0 0 35px rgba(245, 158, 11, 0.18)',
+              backdropFilter: 'blur(20px)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Cabeçalho do Modal VIP */}
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-sm shadow-amber-500/20">
+                  <Crown className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5 m-0 leading-tight">
+                    Área VIP • Clube de Assinaturas
+                  </h2>
+                  <p className="text-[10px] text-slate-400 m-0">
+                    {barbearia?.nome ? `${barbearia.nome} • Benefícios Exclusivos` : 'Área de Membros'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsClubeModalOpen(false)}
+                className="w-7 h-7 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                aria-label="Fechar Modal VIP"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* CONTEÚDO: SE NÃO AUTENTICADO */}
+            {!membroClube ? (
+              <div className="overflow-y-auto pt-3 space-y-3">
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 flex items-start gap-2.5">
+                  <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-amber-200/90 leading-relaxed m-0">
+                    Identifique-se como assinante do clube para liberar descontos em produtos, cortes inclusos e agendamento com profissionais VIP.
+                  </p>
+                </div>
+
+                <form onSubmit={handleAcessarClube} className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Nome do Assinante
+                    </label>
+                    <input
+                      type="text"
+                      value={clubeNomeInput}
+                      onChange={(e) => setClubeNomeInput(e.target.value)}
+                      placeholder="Ex: Carlos Silva"
+                      className="w-full py-1.5 px-2.5 text-xs bg-slate-950/80 border border-slate-700 rounded-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-500 transition-colors"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Telefone / WhatsApp (Chave do Assinante) <span className="text-amber-400">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      required
+                      value={clubeTelefoneInput}
+                      onChange={(e) => setClubeTelefoneInput(formatTelefone(e.target.value))}
+                      placeholder="(19) 99999-0001"
+                      className="w-full py-1.5 px-2.5 text-xs bg-slate-950/80 border border-slate-700 rounded-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-500 transition-colors"
+                    />
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                      Digite o número cadastrado no momento da adesão ao plano.
+                    </span>
+                  </div>
+
+                  {clubeError && (
+                    <div className="bg-red-500/15 border border-red-500/40 text-red-300 p-2.5 rounded-lg text-xs flex items-start gap-2 animate-in fade-in">
+                      <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                      <span className="font-semibold leading-snug">{clubeError}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={clubeLoading}
+                    className="w-full px-3 py-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {clubeLoading ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Crown className="w-3.5 h-3.5" />
+                    )}
+                    <span>{clubeLoading ? 'Consultando Assinatura...' : 'Acessar Clube'}</span>
+                  </button>
+
+                  <div className="pt-2 text-center border-t border-white/5">
+                    <p className="text-[10px] text-slate-400 m-0">
+                      Quer assinar o clube? Solicite a adesão presencialmente na recepção da barbearia.
+                    </p>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              /* CONTEÚDO: SE AUTENTICADO COMO MEMBRO ATIVO */
+              <div className="overflow-y-auto pt-3 space-y-4 pr-1">
+                {/* 1. CARTÃO DIGITAL DO ASSINANTE */}
+                <div
+                  className="relative rounded-xl p-4 overflow-hidden border border-amber-500/40 text-white shadow-xl"
+                  style={{
+                    background: 'linear-gradient(135deg, #18181b 0%, #1e1910 50%, #291c09 100%)',
+                    boxShadow: '0 10px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(245, 158, 11, 0.3)'
+                  }}
+                >
+                  <div className="absolute top-0 right-0 w-36 h-36 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+
+                  {/* Header do Cartão */}
+                  <div className="flex items-center justify-between mb-3 relative z-10">
+                    <div className="flex items-center gap-1.5 text-amber-400">
+                      <Crown className="w-4 h-4" />
+                      <span className="text-[11px] font-black uppercase tracking-wider">
+                        Cartão do Assinante VIP
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-[10px] font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Assinatura Ativa
+                    </div>
+                  </div>
+
+                  {/* Nome do Plano (Ex: Membro Black) */}
+                  <div className="relative z-10 mb-3.5">
+                    <div className="text-[10px] text-amber-400/80 uppercase font-semibold">
+                      Plano Exclusivo
+                    </div>
+                    <div className="text-base sm:text-lg font-black text-amber-300 tracking-wide uppercase">
+                      {membroClube.expand?.plano?.nome
+                        ? `Membro ${membroClube.expand.plano.nome.replace('Plano ', '')}`
+                        : 'Membro Black'}
+                    </div>
+                  </div>
+
+                  {/* Dados do Titular e Validade */}
+                  <div className="relative z-10 flex items-end justify-between pt-2.5 border-t border-white/10 text-xs">
+                    <div>
+                      <div className="text-[9px] text-slate-400 uppercase font-semibold">Titular</div>
+                      <div className="font-bold text-slate-100 tracking-wide">
+                        {membroClube.nome.toUpperCase()}
+                      </div>
+                      <div className="text-[10px] text-slate-400">{membroClube.telefone}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[9px] text-slate-400 uppercase font-semibold">Validade</div>
+                      <div className="text-[11px] font-semibold text-amber-200">
+                        {membroClube.validade
+                          ? new Date(membroClube.validade).toLocaleDateString('pt-BR')
+                          : 'Renovação Contínua'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. SEÇÃO: MEUS BENEFÍCIOS */}
+                <div className="bg-slate-950/70 border border-white/10 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400 uppercase tracking-wider">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Meus Benefícios</span>
+                  </div>
+
+                  {/* Desconto Exclusivo em Produtos */}
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center flex-shrink-0">
+                        <Tag className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-white">
+                          Desconto na Vitrine & Balcão
+                        </div>
+                        <div className="text-[10px] text-slate-300">
+                          Pomadas, óleos, tônicos e cosméticos
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-xs font-black text-amber-400 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/40">
+                      {membroClube.expand?.plano?.desconto_produtos_pct ?? 15}% OFF
+                    </span>
+                  </div>
+
+                  {/* Cortes Inclusos no Mês */}
+                  <div className="bg-slate-900/80 border border-white/5 rounded-lg p-2.5 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center flex-shrink-0">
+                        <Scissors className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-white">
+                          Cota de Cortes
+                        </div>
+                        <div className="text-[10px] text-slate-300">
+                          {membroClube.expand?.plano?.permite_corte_ilimitado
+                            ? 'Cortes Ilimitados no Mês'
+                            : `${membroClube.expand?.plano?.limite_cortes_mes || 4} cortes por mês inclusos`}
+                        </div>
+                      </div>
+                    </div>
+                    <Check className="w-4 h-4 text-emerald-400" />
+                  </div>
+                </div>
+
+                {/* 3. SEÇÃO: AGENDAMENTO VIP */}
+                <div className="bg-slate-950/70 border border-white/10 rounded-xl p-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400 uppercase tracking-wider">
+                      <Crown className="w-3.5 h-3.5" />
+                      <span>Agendamento VIP</span>
+                    </div>
+                    <span className="text-[10px] text-amber-300/80 font-medium">
+                      Barbeiros Elegíveis
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 leading-relaxed m-0">
+                    Como assinante VIP, você agenda diretamente com mestres de bancada exclusiva ou atendimento híbrido:
+                  </p>
+
+                  <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                    {barbeirosElegiveis.length === 0 ? (
+                      <div className="text-xs text-slate-400 text-center py-2">
+                        Nenhum profissional VIP ativo cadastrado no momento.
+                      </div>
+                    ) : (
+                      barbeirosElegiveis.map((prof) => (
+                        <div
+                          key={prof.id}
+                          className="flex items-center justify-between p-2 rounded-lg bg-slate-900/90 border border-white/5 hover:border-amber-500/30 transition-all"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full overflow-hidden border border-amber-500/40 flex-shrink-0">
+                              <img
+                                src={prof.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80'}
+                                alt={prof.nome}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div>
+                              <div className="text-xs font-bold text-white flex items-center gap-1.5 leading-tight">
+                                <span>{prof.apelido || prof.nome}</span>
+                                {prof.tipo_atendimento === 'exclusivo_clube' && (
+                                  <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1 py-0.2 rounded font-bold">
+                                    Exclusivo
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                {prof.tipo_atendimento === 'exclusivo_clube' ? 'Bancada Exclusiva VIP' : 'Atendimento VIP & Geral'}
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedBarbeiroId(prof.id);
+                              setAssignedBarbeiroId('');
+                              setAgendamentoVipAtivo(true);
+                              setIsClubeModalOpen(false);
+                              const el = document.getElementById('sec-data-horario');
+                              if (el) el.scrollIntoView({ behavior: 'smooth' });
+                            }}
+                            className="px-2.5 py-1 text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded transition-all cursor-pointer"
+                          >
+                            Agendar
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAgendamentoVipAtivo(true);
+                      setIsClubeModalOpen(false);
+                      const el = document.getElementById('sec-barbeiros');
+                      if (el) el.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="w-full px-3 py-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
+                  >
+                    <Crown className="w-3.5 h-3.5" />
+                    <span>Continuar Agendamento no Modo VIP</span>
+                  </button>
+                </div>
+
+                {/* Ações de Rodapé */}
+                <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs">
+                  <button
+                    type="button"
+                    onClick={handleSairClube}
+                    className="text-slate-400 hover:text-red-400 transition-colors text-[11px] underline cursor-pointer"
+                  >
+                    Sair da Área VIP / Trocar Assinante
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsClubeModalOpen(false)}
+                    className="text-amber-400 hover:text-amber-300 font-medium text-[11px] cursor-pointer"
+                  >
+                    Fechar Modal
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

@@ -9,6 +9,10 @@ import { SuperAdminLayout } from './components/SuperAdminLayout';
 import { SuperAdminDashboard } from './components/SuperAdminDashboard';
 import { SuperAdminLojasView } from './components/SuperAdminLojasView';
 import { SuperAdminLogsView } from './components/SuperAdminLogsView';
+import SplitPaymentView from './components/SplitPaymentView';
+import BarbeiroAppView from './pages/BarbeiroAppView';
+import LoginView from './pages/LoginView';
+import TerminalMaquininhaPWAView from './pages/TerminalMaquininhaPWAView';
 import { authService, Barbearia, Usuario, Fatura, faturasService, saasService, pb } from './services/pocketbase';
 
 const devFallbackUser = {
@@ -139,6 +143,66 @@ const TenantRoute: React.FC<{
   );
 };
 
+/**
+ * Wrapper de Painel Administrativo do Tenant (/b/:slug/admin)
+ */
+const TenantAdminRoute: React.FC<{
+  user: Usuario | null;
+  onBarbeariaUpdated: (b: Barbearia) => void;
+  onLogout: () => void;
+}> = ({ user, onBarbeariaUpdated, onLogout }) => {
+  const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
+  const [tenantBarb, setTenantBarb] = useState<Barbearia | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchBarb = async () => {
+      try {
+        if (slug) {
+          const cleanSlug = slug.trim().toLowerCase();
+          const b = await pb.collection('barbearias').getFirstListItem<Barbearia>(`slug="${cleanSlug}"`);
+          setTenantBarb(b);
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar tenant:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchBarb();
+  }, [slug]);
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0B0F19', color: '#fff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+          <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+          <span>Carregando painel administrativo...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Se não autenticado no PocketBase, redireciona para login do tenant
+  if (!user && !pb.authStore.isValid) {
+    return <Navigate to={`/b/${slug || 'belchior'}/login`} replace />;
+  }
+
+  const currentUser = user || (pb.authStore.record as unknown as Usuario);
+
+  return (
+    <DashboardAdminView
+      user={currentUser}
+      barbearia={tenantBarb || devFallbackBarb}
+      onBarbeariaUpdated={onBarbeariaUpdated}
+      onLogout={onLogout}
+      onOpenVitrine={(s) => navigate(`/b/${s}`)}
+      onOpenSuperAdmin={() => navigate('/admin')}
+    />
+  );
+};
+
 export const App: React.FC = () => {
   const [user, setUser] = useState<Usuario | null>(null);
   const [barbearia, setBarbearia] = useState<Barbearia | null>(null);
@@ -264,6 +328,7 @@ export const App: React.FC = () => {
       <Route element={<SuperAdminLayout />} path="/admin">
         <Route element={<SuperAdminDashboard />} index />
         <Route element={<SuperAdminLojasView />} path="barbearias" />
+        <Route element={<SplitPaymentView />} path="split" />
         <Route element={<SuperAdminDashboard />} path="financeiro" />
         <Route element={<SuperAdminLogsView />} path="logs" />
       </Route>
@@ -272,14 +337,42 @@ export const App: React.FC = () => {
       <Route element={<SuperAdminLayout />} path="/superadmin">
         <Route element={<SuperAdminDashboard />} index />
         <Route element={<SuperAdminLojasView />} path="barbearias" />
+        <Route element={<SplitPaymentView />} path="split" />
         <Route element={<SuperAdminDashboard />} path="financeiro" />
         <Route element={<SuperAdminLogsView />} path="logs" />
       </Route>
 
-      {/* 2. ROTA PÚBLICA DA VITRINE B2C: isolada em /b/:slug */}
+      {/* 2. ROTAS DE AUTENTICAÇÃO UNIFICADA */}
+      <Route path="/login" element={<LoginView />} />
+      <Route path="/b/:slug/login" element={<LoginView />} />
+
+      {/* 2.1 ROTA DO TERMINAL PWA DA MAQUININHA (SMART LINK / TEF WEB) */}
+      <Route path="/terminal" element={<TerminalMaquininhaPWAView />} />
+      <Route path="/terminal/:codigo" element={<TerminalMaquininhaPWAView />} />
+      <Route path="/b/:slug/terminal" element={<TerminalMaquininhaPWAView />} />
+
+      {/* 3. PAINEL ADMINISTRATIVO DO TENANT (DONO / GERENTE) */}
+      <Route
+        path="/b/:slug/admin"
+        element={
+          <TenantAdminRoute
+            user={user}
+            onBarbeariaUpdated={handleBarbeariaUpdated}
+            onLogout={handleLogout}
+          />
+        }
+      />
+
+      {/* 4. ÁREA EXCLUSIVA MOBILE-FIRST DO PROFISSIONAL/BARBEIRO */}
+      <Route path="/b/:slug/barbeiro" element={<BarbeiroAppView />} />
+      <Route path="/b/:slug/barbeiro/perfil" element={<BarbeiroAppView />} />
+      <Route path="/b/:slug/app" element={<BarbeiroAppView />} />
+      <Route path="/barbeiro" element={<BarbeiroAppView />} />
+
+      {/* 5. ROTA PÚBLICA DA VITRINE B2C: isolada em /b/:slug */}
       <Route path="/b/:slug" element={<VitrineRoute user={user} />} />
 
-      {/* 3. ROTAS DO TENANT (BARBEARIA) */}
+      {/* 6. ROTAS DO TENANT (BARBEARIA) */}
       <Route
         path="/*"
         element={

@@ -30,8 +30,15 @@ import {
   Edit3,
   Save,
   Clock,
-  Calculator
+  Calculator,
+  GitFork,
+  Radio,
+  Gift,
+  Zap,
+  Monitor,
+  SmartphoneNfc
 } from 'lucide-react';
+import SplitPaymentView from './SplitPaymentView';
 import { pb } from '../lib/pocketbase';
 import {
   criarClienteAsaas,
@@ -40,6 +47,7 @@ import {
   listarCobrancasClienteAsaas,
   atualizarClienteAsaas,
   atualizarCobrancaAsaas,
+  calcularTaxaNavilleSplit,
   CobrancaAsaas,
   AsaasBillingType
 } from '../lib/asaas';
@@ -51,6 +59,7 @@ export default function SuperAdminLojasView() {
   const [saving, setSaving] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState('');
   const [syncing, setSyncing] = useState(false);
+  const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
 
   // Estados para Emissão de Cobrança / Assinatura Asaas
   const [isCobrancaModalOpen, setIsCobrancaModalOpen] = useState(false);
@@ -93,6 +102,26 @@ export default function SuperAdminLojasView() {
   const [valorWhatsApp, setValorWhatsApp] = useState<number>(39.9);
   const [valorAssessor, setValorAssessor] = useState<number>(59.9);
 
+  // Estados dos Terminais de Pagamento da Loja Selecionada
+  const [terminaisTenant, setTerminaisTenant] = useState<any[]>([]);
+  const [loadingTerminaisTenant, setLoadingTerminaisTenant] = useState(false);
+
+  const carregarTerminaisTenant = async (tenantId: string) => {
+    if (!tenantId) return;
+    try {
+      setLoadingTerminaisTenant(true);
+      const list = await pb.collection('terminais_pagamento').getFullList({
+        filter: `barbearia = "${tenantId}"`,
+        sort: '-created',
+      });
+      setTerminaisTenant(list);
+    } catch (err) {
+      console.error('Erro ao buscar terminais no superadmin:', err);
+    } finally {
+      setLoadingTerminaisTenant(false);
+    }
+  };
+
   useEffect(() => {
     async function fetchTenants() {
       try {
@@ -101,6 +130,7 @@ export default function SuperAdminLojasView() {
         if (records.length > 0) {
           setSelectedTenant(records[0]);
           syncLocalValues(records[0]);
+          carregarTerminaisTenant(records[0].id);
         }
       } catch (error) {
         console.error('Erro ao buscar barbearias:', error);
@@ -121,6 +151,7 @@ export default function SuperAdminLojasView() {
   const handleSelectTenant = (tenant: any) => {
     setSelectedTenant(tenant);
     syncLocalValues(tenant);
+    carregarTerminaisTenant(tenant.id);
   };
 
   const handleUpdateTenantField = async (field: string, value: any) => {
@@ -766,14 +797,20 @@ export default function SuperAdminLojasView() {
 
                     <button
                       type="button"
-                      onClick={() => handleUpdateTenantField('vip_club_ativo', !selectedTenant.vip_club_ativo)}
+                      onClick={() => {
+                        const novo = !(selectedTenant.vip_club_ativo || selectedTenant.modulo_clube_vip);
+                        handleUpdateMultiple({
+                          vip_club_ativo: novo,
+                          modulo_clube_vip: novo,
+                        });
+                      }}
                       className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer focus:outline-none ${
-                        selectedTenant.vip_club_ativo ? 'bg-emerald-500' : 'bg-zinc-700'
+                        (selectedTenant.vip_club_ativo || selectedTenant.modulo_clube_vip) ? 'bg-emerald-500' : 'bg-zinc-700'
                       }`}
                     >
                       <span
                         className={`inline-block w-5 h-5 rounded-full bg-white transform transition-transform ${
-                          selectedTenant.vip_club_ativo ? 'translate-x-5.5' : 'translate-x-0.5'
+                          (selectedTenant.vip_club_ativo || selectedTenant.modulo_clube_vip) ? 'translate-x-5.5' : 'translate-x-0.5'
                         } top-0.5 absolute left-0`}
                       />
                     </button>
@@ -969,6 +1006,197 @@ export default function SuperAdminLojasView() {
                     >
                       <Bot size={11} />
                       {selectedTenant.modulo_assessor ? 'Assessor Ativo nesta Loja' : 'Adicionar Meu Assessor (+R$ 59,90)'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* 7. MÓDULO SPLIT DE PAGAMENTOS & SUBCONTAS (ASAAS - LEI SALÃO-PARCEIRO) */}
+                <div className="p-3.5 rounded-xl bg-gradient-to-br from-indigo-500/10 via-white/[0.015] to-emerald-500/10 border border-indigo-500/30 flex flex-col justify-between gap-3 shadow-[0_0_15px_rgba(99,102,241,0.05)]">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5 text-white font-bold text-xs">
+                        <GitFork className="text-indigo-400" size={15} />
+                        <span>Split de Pagamentos Asaas</span>
+                        <span className="text-[8px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.2 rounded font-bold uppercase tracking-wider">
+                          Salão-Parceiro
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-zinc-300 mt-1">
+                        Rateio automático D+0 entre Barbearia, Barbeiros e Taxa Naville (Take-Rate) sem bitributação.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const novoStatus = !(selectedTenant.split_ativo ?? selectedTenant.modulo_split_asaas);
+                        handleUpdateMultiple({
+                          split_ativo: novoStatus,
+                          modulo_split_asaas: novoStatus,
+                        });
+                      }}
+                      className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer focus:outline-none ${
+                        (selectedTenant.split_ativo ?? selectedTenant.modulo_split_asaas) ? 'bg-indigo-600' : 'bg-zinc-700'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block w-5 h-5 rounded-full bg-white transform transition-transform ${
+                          (selectedTenant.split_ativo ?? selectedTenant.modulo_split_asaas) ? 'translate-x-5.5' : 'translate-x-0.5'
+                        } top-0.5 absolute left-0`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* REGRAS COMERCIAIS DO SPLIT */}
+                  <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] flex flex-col gap-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                      <div className="flex items-center gap-2">
+                        <GitFork className="text-indigo-400" size={16} />
+                        <span className="text-xs font-bold text-white">Regras Comerciais do Split</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                        Take-rate: R$ {Number(selectedTenant.split_taxa_transacao || 0.35).toFixed(2)}/op
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateTenantField('split_carencia_tipo', 'dias')}
+                        className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${
+                          (selectedTenant.split_carencia_tipo || 'dias') === 'dias'
+                            ? 'bg-white/10 border-white/20 text-white'
+                            : 'border-white/5 text-zinc-500 hover:text-zinc-400'
+                        }`}
+                      >
+                        Dias Gratuitos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateTenantField('split_carencia_tipo', 'transacoes')}
+                        className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${
+                          selectedTenant.split_carencia_tipo === 'transacoes'
+                            ? 'bg-white/10 border-white/20 text-white'
+                            : 'border-white/5 text-zinc-500 hover:text-zinc-400'
+                        }`}
+                      >
+                        Cota Mensal Grátis
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateTenantField('split_carencia_tipo', 'isento_vitalicio')}
+                        className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${
+                          selectedTenant.split_carencia_tipo === 'isento_vitalicio'
+                            ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300'
+                            : 'border-white/5 text-zinc-500 hover:text-zinc-400'
+                        }`}
+                      >
+                        Isenção Total (R$ 0)
+                      </button>
+                    </div>
+
+                    {(selectedTenant.split_carencia_tipo || 'dias') === 'dias' && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <label className="text-[10px] text-zinc-400">Dias de carência:</label>
+                        <input
+                          type="number"
+                          value={selectedTenant.split_dias_gratis ?? 30}
+                          onChange={(e) => handleUpdateTenantField('split_dias_gratis', Number(e.target.value))}
+                          className="w-20 bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white outline-none focus:border-indigo-500"
+                          placeholder="30"
+                        />
+                        <span className="text-[10px] text-zinc-500">dias a contar da ativação</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleUpdateMultiple({
+                              split_data_ativacao: new Date().toISOString(),
+                              split_dias_gratis: selectedTenant.split_dias_gratis ?? 30,
+                            });
+                          }}
+                          className="ml-auto text-[9px] text-indigo-400 hover:text-indigo-300 font-bold underline cursor-pointer"
+                        >
+                          Renovar (Hoje)
+                        </button>
+                      </div>
+                    )}
+
+                    {selectedTenant.split_carencia_tipo === 'transacoes' && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <label className="text-[10px] text-zinc-400">Cota mensal:</label>
+                        <input
+                          type="number"
+                          value={selectedTenant.split_franquia_transacoes_mensal ?? 30}
+                          onChange={(e) => handleUpdateTenantField('split_franquia_transacoes_mensal', Number(e.target.value))}
+                          className="w-20 bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white outline-none focus:border-indigo-500"
+                          placeholder="30"
+                        />
+                        <span className="text-[10px] text-zinc-500">transações gratuitas todo mês</span>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateTenantField('split_contador_mes_atual', 0)}
+                          className="ml-auto text-[9px] text-blue-400 hover:text-blue-300 font-bold underline cursor-pointer"
+                        >
+                          Zerar ({selectedTenant.split_contador_mes_atual ?? 0} usadas)
+                        </button>
+                      </div>
+                    )}
+
+                    {selectedTenant.split_carencia_tipo === 'isento_vitalicio' && (
+                      <div className="text-[10px] text-emerald-400 flex items-center gap-1.5 pt-1">
+                        <Gift size={13} />
+                        <span>Isenção vitalícia ativada: R$ 0,00 de retenção Naville em qualquer volume.</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* RESUMO DOS TERMINAIS PAREADOS (SMART LINK / TEF) */}
+                  <div className="p-2.5 rounded-lg bg-black/40 border border-white/5 flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-zinc-400 flex items-center gap-1.5">
+                        <Radio size={12} className="text-emerald-400" />
+                        Terminais Pareados:
+                      </span>
+                      <span className="text-[9px] font-mono text-emerald-400 font-bold">
+                        {terminaisTenant.length} conectados
+                      </span>
+                    </div>
+
+                    {loadingTerminaisTenant ? (
+                      <span className="text-[10px] text-zinc-500">Carregando terminais...</span>
+                    ) : terminaisTenant.length === 0 ? (
+                      <span className="text-[10px] text-zinc-500">Nenhum terminal físico ou PWA registrado.</span>
+                    ) : (
+                      <div className="flex flex-col gap-1 mt-1">
+                        {terminaisTenant.slice(0, 3).map((t: any) => (
+                          <div key={t.id} className="flex items-center justify-between text-[10px] bg-white/[0.02] px-2 py-1 rounded border border-white/5">
+                            <span className="text-white font-medium truncate max-w-[130px]">
+                              {t.identificador}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[9px] font-mono text-zinc-400">#{t.codigo_pareamento}</span>
+                              <div className={`w-1.5 h-1.5 rounded-full ${
+                                t.status === 'aguardando_pagamento'
+                                  ? 'bg-amber-400 animate-ping'
+                                  : t.status === 'online'
+                                  ? 'bg-emerald-400'
+                                  : 'bg-zinc-600'
+                              }`} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-2 border-t border-white/5 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsSplitModalOpen(true)}
+                      className="flex-1 py-1.5 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 shadow-sm"
+                    >
+                      <GitFork size={12} />
+                      <span>Gerenciar Subcontas, Regras & Terminais ({selectedTenant.nome})</span>
                     </button>
                   </div>
                 </div>
@@ -1571,6 +1799,22 @@ export default function SuperAdminLojasView() {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL / OVERLAY: SPLIT DE PAGAMENTOS & SUBCONTAS ASAAS */}
+      {isSplitModalOpen && selectedTenant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/85 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto">
+          <div className="relative w-full max-w-5xl rounded-2xl bg-zinc-950/95 border border-white/10 p-5 sm:p-6 shadow-2xl flex flex-col gap-4 text-white max-h-[92vh] overflow-y-auto custom-scrollbar">
+            <SplitPaymentView
+              tenant={selectedTenant}
+              onUpdateTenant={(updated) => {
+                setSelectedTenant(updated);
+                setBarbearias((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+              }}
+              onClose={() => setIsSplitModalOpen(false)}
+            />
           </div>
         </div>
       )}

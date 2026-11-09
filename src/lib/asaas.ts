@@ -2,6 +2,8 @@
  * Integração com o Gateway de Pagamentos Asaas
  */
 
+import { pb } from '../services/pocketbase';
+
 export interface ClienteAsaas {
   id: string;
   name: string;
@@ -338,3 +340,240 @@ export async function atualizarCobrancaAsaas(
 
   return data as CobrancaAsaas;
 }
+
+export interface SubcontaAsaasPayload {
+  name: string;
+  email: string;
+  cpfCnpj: string;
+  mobilePhone?: string;
+  phone?: string;
+  incomeValue?: number;
+  address?: string;
+  addressNumber?: string;
+  province?: string;
+  postalCode?: string;
+}
+
+export interface SubcontaAsaasResponse {
+  id: string;
+  name: string;
+  email: string;
+  loginEmail?: string;
+  cpfCnpj?: string;
+  walletId: string;
+  apiKey?: string;
+  accountNumber?: {
+    agency: string;
+    account: string;
+    accountDigit: string;
+  };
+}
+
+/**
+ * Cria uma subconta no Asaas para o Barbeiro / Parceiro
+ */
+export async function criarSubcontaAsaas(
+  dados: SubcontaAsaasPayload
+): Promise<SubcontaAsaasResponse> {
+  let config;
+  try {
+    config = getAsaasConfig();
+  } catch {
+    // Em fallback ou sem token configurado, gera IDs de simulação para permitir testes
+    const mockId = `acc_${Math.random().toString(36).substring(2, 10)}`;
+    const mockWallet = `wal_${Math.random().toString(36).substring(2, 10)}`;
+    return {
+      id: mockId,
+      name: dados.name,
+      email: dados.email,
+      cpfCnpj: dados.cpfCnpj,
+      walletId: mockWallet,
+    };
+  }
+
+  const { apiKey, baseUrl } = config;
+  const docLimpo = (dados.cpfCnpj || '').replace(/\D/g, '');
+  const telLimpo = (dados.mobilePhone || dados.phone || '11999999999').replace(/\D/g, '');
+
+  const payload: Record<string, any> = {
+    name: dados.name,
+    email: dados.email,
+    cpfCnpj: docLimpo,
+    mobilePhone: telLimpo,
+    incomeValue: dados.incomeValue || 2500,
+  };
+
+  if (dados.address) payload.address = dados.address;
+  if (dados.addressNumber) payload.addressNumber = dados.addressNumber;
+  if (dados.province) payload.province = dados.province;
+  if (dados.postalCode) payload.postalCode = dados.postalCode.replace(/\D/g, '');
+
+  const response = await fetch(`${baseUrl}/accounts`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'access_token': apiKey,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const errorMsg =
+      data.errors?.[0]?.description ||
+      data.message ||
+      `Erro ao criar subconta no Asaas (${response.status})`;
+    throw new Error(errorMsg);
+  }
+
+  return data as SubcontaAsaasResponse;
+}
+
+/**
+ * Motor de cálculo da taxa Naville (R$ 0,35 padrão ou regras de isenção/carência)
+ */
+export function calcularTaxaNavilleSplit(barbearia: any): number {
+  if (!barbearia) return 0.35;
+
+  // 1. Isenção vitalícia configurada no SuperAdmin
+  if (barbearia.split_carencia_tipo === 'isento_vitalicio') {
+    return 0.00;
+  }
+
+  // 2. Período de carência em dias (ex: primeiros 30 dias gratuitos)
+  if (barbearia.split_carencia_tipo === 'dias' && barbearia.split_data_ativacao) {
+    const dataAtivacao = new Date(barbearia.split_data_ativacao);
+    const hoje = new Date();
+    const diffDias = Math.floor((hoje.getTime() - dataAtivacao.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (diffDias <= (barbearia.split_dias_gratis || 30)) {
+      return 0.00;
+    }
+  }
+
+  // 3. Franquia mensal de operações gratuitas (ex: 30 primeiras transações do mês)
+  if (barbearia.split_carencia_tipo === 'transacoes') {
+    const operacoesFeitas = barbearia.split_contador_mes_atual || 0;
+    const limiteGratis = barbearia.split_franquia_transacoes_mensal || 30;
+    
+    if (operacoesFeitas < limiteGratis) {
+      return 0.00;
+    }
+  }
+
+  // Se ultrapassou o período ou a franquia, cobra o valor padrão configurado
+  return barbearia.split_taxa_transacao ?? 0.35;
+}
+
+export interface SplitDivisaoResultado {
+  valorTotal: number;
+  taxaNaville: number;
+  fatiaProfissional: number;
+  fatiaBarbearia: number;
+  isento: boolean;
+  motivoIsencao?: string;
+}
+
+/**
+ * Calcula a divisão do Split para uma transação considerando as regras da barbearia
+ */
+export function calcularDivisaoSplitTransacao(
+  valorTotal: number,
+  comissaoPct: number,
+  barbearia: any
+): SplitDivisaoResultado {
+  const taxaNaville = calcularTaxaNavilleSplit(barbearia);
+  const isento = taxaNaville === 0;
+  
+  let motivoIsencao: string | undefined;
+  if (isento) {
+    if (barbearia?.split_carencia_tipo === 'isento_vitalicio') {
+      motivoIsencao = 'Isenção Vitalícia SuperAdmin';
+    } else if (barbearia?.split_carencia_tipo === 'dias') {
+      motivoIsencao = 'Carência de Ativação (Dias Grátis)';
+    } else if (barbearia?.split_carencia_tipo === 'transacoes') {
+      motivoIsencao = 'Franquia Mensal Gratuita';
+    }
+  }
+
+  // Barbeiro recebe sua porcentagem sobre o valor deduzida a taxa do ecossistema se configurado, ou do bruto
+  const baseCalculo = Math.max(0, valorTotal - taxaNaville);
+  const fatiaProfissional = Number((baseCalculo * (comissaoPct / 100)).toFixed(2));
+  const fatiaBarbearia = Number((valorTotal - taxaNaville - fatiaProfissional).toFixed(2));
+
+  return {
+    valorTotal,
+    taxaNaville,
+    fatiaProfissional,
+    fatiaBarbearia,
+    isento,
+    motivoIsencao,
+  };
+}
+
+/**
+ * Atualiza os dados bancários / Chave Pix na subconta do Asaas e no PocketBase
+ */
+export async function atualizarChavePixBarbeiro({
+  subcontaAsaasId,
+  tipoChave,
+  chavePix,
+  profissionalId,
+  pinConfirmacao
+}: {
+  subcontaAsaasId: string;
+  tipoChave: 'CPF' | 'PHONE' | 'EMAIL' | 'EVP';
+  chavePix: string;
+  profissionalId: string;
+  pinConfirmacao: string;
+}) {
+  // 1. Valida o PIN do profissional no PocketBase antes de qualquer chamada externa
+  const profissional = await pb.collection('profissionais').getOne<any>(profissionalId);
+  const pinCadastrado = profissional.pin || profissional.pin_acesso || '1234';
+  if (pinCadastrado !== pinConfirmacao.trim()) {
+    throw new Error('PIN de segurança incorreto.');
+  }
+
+  // 2. Atualiza a subconta ou os dados de transferência padrão na API Asaas
+  let apiKey = '';
+  let baseUrl = 'https://api.asaas.com/api/v3';
+  try {
+    const config = getAsaasConfig();
+    apiKey = config.apiKey;
+    baseUrl = config.baseUrl;
+  } catch {
+    apiKey = (typeof process !== 'undefined' && process.env?.ASAAS_API_KEY) || '';
+  }
+
+  // Se houver subconta real e chave de API válida, dispara ao Asaas
+  if (apiKey && subcontaAsaasId && !subcontaAsaasId.startsWith('acc_mock') && !subcontaAsaasId.startsWith('wal_mock')) {
+    const response = await fetch(`${baseUrl}/accounts/${subcontaAsaasId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'access_token': apiKey
+      },
+      body: JSON.stringify({
+        pixAddressKey: chavePix,
+        pixAddressKeyType: tipoChave
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.errors?.[0]?.description || errorData.message || 'Erro ao sincronizar com o Asaas.');
+    }
+  }
+
+  // 3. Atualiza o registro no PocketBase
+  const recordAtualizado = await pb.collection('profissionais').update(profissionalId, {
+    pix_chave: chavePix,
+    pix_tipo: tipoChave.toLowerCase(),
+    pix_ultima_atualizacao: new Date().toISOString(),
+    split_status: 'ativo'
+  });
+
+  return { success: true, profissional: recordAtualizado };
+}
+

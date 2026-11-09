@@ -59,6 +59,46 @@ export interface Barbearia {
   logo?: string;
   logo_url?: string;
   asaas_id?: string;
+  modulo_split_asaas?: boolean;
+  split_taxa_tipo?: 'fixa' | 'percentual';
+  split_taxa_valor?: number;
+  asaas_wallet_id?: string;
+  pix_chave_repasse?: string;
+  pix_tipo_chave?: 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria';
+  banco_nome?: string;
+  canal_captura_principal?: 'display_pix' | 'tap_phone' | 'smart_pos';
+  solicitou_maquininha?: boolean;
+  maquininha_modelo?: string;
+  // Campos de Governança e Isenção de Split
+  split_ativo?: boolean;
+  split_carencia_tipo?: 'dias' | 'transacoes' | 'isento_vitalicio';
+  split_dias_gratis?: number;
+  split_data_ativacao?: string;
+  split_franquia_transacoes_mensal?: number;
+  split_contador_mes_atual?: number;
+  split_taxa_transacao?: number;
+  split_mensalidade_modulo?: number;
+  created?: string;
+  updated?: string;
+}
+
+/**
+ * Interface da coleção 'terminais_pagamento' (TEF Web / Smart Link e PWA Maquininha)
+ */
+export interface TerminalPagamento {
+  id: string;
+  collectionId?: string;
+  collectionName?: string;
+  barbearia: string;
+  identificador: string;
+  tipo_terminal: 'tef_smartlink' | 'pwa_maquininha';
+  codigo_pareamento: string;
+  status: 'online' | 'offline' | 'aguardando_pagamento';
+  cobranca_ativa?: string;
+  expand?: {
+    barbearia?: Barbearia;
+    cobranca_ativa?: any;
+  };
   created?: string;
   updated?: string;
 }
@@ -130,6 +170,9 @@ export interface Servico {
   foto?: string;
   foto_url?: string;
   asaas_id?: string;
+  comissao_personalizada_ativa?: boolean;
+  comissao_tipo?: 'padrao_barbeiro' | 'porcentagem_fixa' | 'valor_fixo';
+  comissao_valor?: number;
   created?: string;
   updated?: string;
 }
@@ -150,6 +193,17 @@ export interface Profissional {
   servicos_ids: string[];
   avatar_url?: string;
   asaas_id?: string;
+  asaas_account_id?: string;
+  asaas_wallet_id?: string;
+  porcentagem_comissao?: number;
+  cpf_cnpj?: string;
+  pin?: string;
+  pin_acesso?: string;
+  pix_tipo?: string;
+  pix_chave?: string;
+  pix_banco?: string;
+  pix_ultima_atualizacao?: string;
+  split_status?: 'pendente' | 'ativo' | 'recusado';
   created?: string;
   updated?: string;
 }
@@ -463,6 +517,9 @@ export const servicosService = {
     destaque?: boolean;
     foto_url?: string;
     foto?: string;
+    comissao_personalizada_ativa?: boolean;
+    comissao_tipo?: 'padrao_barbeiro' | 'porcentagem_fixa' | 'valor_fixo';
+    comissao_valor?: number;
   }): Promise<Servico> {
     return await pb.collection('servicos').create<Servico>(data);
   },
@@ -1401,5 +1458,41 @@ export const saasService = {
     return { isBloqueado: false };
   }
 };
+
+export const clubePlanosService = {
+  async getOne(id: string): Promise<ClubePlano | null> {
+    try {
+      return await pb.collection('clube_planos').getOne<ClubePlano>(id);
+    } catch {
+      return null;
+    }
+  },
+  async listar(barbeariaId: string): Promise<ClubePlano[]> {
+    try {
+      return await pb.collection('clube_planos').getFullList<ClubePlano>({
+        filter: `barbearia = "${barbeariaId}" && ativo = true`,
+        sort: 'valor_mensal',
+      });
+    } catch {
+      return [];
+    }
+  }
+};
+
+export const clubeMembrosService = {
+  async buscarMembro(barbeariaId: string, telefone: string): Promise<any | null> {
+    try {
+      const cleanPhone = telefone.replace(/\D/g, '');
+      const records = await pb.collection('clube_membros').getFullList({
+        filter: `barbearia = "${barbeariaId}" && (telefone ~ "${cleanPhone}" || telefone = "${cleanPhone}")`,
+        expand: 'plano',
+      });
+      return records[0] || null;
+    } catch {
+      return null;
+    }
+  }
+};
+
 
 

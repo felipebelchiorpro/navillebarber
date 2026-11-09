@@ -69,6 +69,11 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
   const [destaque, setDestaque] = useState(false);
   const [fotoUrl, setFotoUrl] = useState('');
 
+  // Comissão Flexível por Serviço
+  const [comissaoPersonalizadaAtiva, setComissaoPersonalizadaAtiva] = useState(false);
+  const [comissaoTipo, setComissaoTipo] = useState<'padrao_barbeiro' | 'porcentagem_fixa' | 'valor_fixo'>('padrao_barbeiro');
+  const [comissaoValor, setComissaoValor] = useState('35');
+
   // Delete confirmation
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -113,6 +118,9 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
     setDescricao('');
     setDestaque(false);
     setFotoUrl('');
+    setComissaoPersonalizadaAtiva(false);
+    setComissaoTipo('padrao_barbeiro');
+    setComissaoValor('35');
     setFormError(null);
     setIsModalOpen(true);
   };
@@ -127,6 +135,9 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
     setDescricao(servico.descricao || '');
     setDestaque(Boolean(servico.destaque));
     setFotoUrl(servico.foto_url || servico.foto || '');
+    setComissaoPersonalizadaAtiva(Boolean(servico.comissao_personalizada_ativa));
+    setComissaoTipo(servico.comissao_tipo || 'padrao_barbeiro');
+    setComissaoValor((servico.comissao_valor ?? 35).toString());
     setFormError(null);
     setIsModalOpen(true);
   };
@@ -213,6 +224,8 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
     }
 
     setSubmitting(true);
+    const comissaoNum = parseFloat(comissaoValor.replace(',', '.')) || 0;
+
     try {
       if (editingServico) {
         await servicosService.update(editingServico.id, {
@@ -223,7 +236,10 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
           ativo,
           descricao: descricao.trim() || undefined,
           destaque,
-          foto_url: fotoUrl.trim() || undefined
+          foto_url: fotoUrl.trim() || undefined,
+          comissao_personalizada_ativa: comissaoPersonalizadaAtiva,
+          comissao_tipo: comissaoPersonalizadaAtiva ? comissaoTipo : 'padrao_barbeiro',
+          comissao_valor: comissaoPersonalizadaAtiva ? comissaoNum : 0,
         });
       } else {
         await servicosService.create({
@@ -235,7 +251,10 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
           ativo,
           descricao: descricao.trim() || undefined,
           destaque,
-          foto_url: fotoUrl.trim() || undefined
+          foto_url: fotoUrl.trim() || undefined,
+          comissao_personalizada_ativa: comissaoPersonalizadaAtiva,
+          comissao_tipo: comissaoPersonalizadaAtiva ? comissaoTipo : 'padrao_barbeiro',
+          comissao_valor: comissaoPersonalizadaAtiva ? comissaoNum : 0,
         });
       }
 
@@ -564,7 +583,7 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
-                      marginBottom: '0.75rem',
+                      marginBottom: '0.5rem',
                       border: '1px solid rgba(255, 255, 255, 0.04)',
                     }}
                   >
@@ -586,6 +605,33 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
                         {servico.duracao_minutos} min
                       </div>
                     </div>
+                  </div>
+
+                  {/* Badge de Comissão do Serviço */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', fontSize: '0.72rem' }}>
+                    <span style={{ color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                      <Coins size={12} style={{ color: '#fbbf24' }} />
+                      Comissão:
+                    </span>
+                    {servico.comissao_personalizada_ativa ? (
+                      <span style={{
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        color: '#34d399',
+                        padding: '0.1rem 0.45rem',
+                        borderRadius: '0.35rem',
+                        fontWeight: 700,
+                        fontSize: '0.7rem',
+                      }}>
+                        {servico.comissao_tipo === 'valor_fixo'
+                          ? `Fixa R$ ${(servico.comissao_valor ?? 0).toFixed(2)}`
+                          : `${servico.comissao_valor ?? 0}% (Override)`}
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--text-dim)', fontStyle: 'italic', fontSize: '0.7rem' }}>
+                        Padrão do Barbeiro
+                      </span>
+                    )}
                   </div>
 
                   {/* Actions */}
@@ -947,6 +993,117 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
                     ))}
                   </div>
                 </div>
+              </div>
+
+              {/* REGRA DE COMISSÃO DO SERVIÇO (OVERRIDE) */}
+              <div
+                style={{
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: comissaoPersonalizadaAtiva ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid var(--border-subtle)',
+                  borderRadius: '0.75rem',
+                  padding: '0.85rem 1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem',
+                  transition: 'border 0.2s',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div style={{ padding: '0.35rem', borderRadius: '0.4rem', background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24' }}>
+                      <Coins style={{ width: '1rem', height: '1rem' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f8fafc', display: 'block' }}>
+                        Regra de Comissão por Serviço
+                      </label>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                        Sobrescreve a taxa de comissão padrão cadastrada no profissional
+                      </span>
+                    </div>
+                  </div>
+
+                  <input
+                    type="checkbox"
+                    checked={comissaoPersonalizadaAtiva}
+                    onChange={(e) => setComissaoPersonalizadaAtiva(e.target.checked)}
+                    style={{ width: '1.2rem', height: '1.2rem', accentColor: '#f59e0b', cursor: 'pointer' }}
+                  />
+                </div>
+
+                {comissaoPersonalizadaAtiva && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => setComissaoTipo('porcentagem_fixa')}
+                        style={{
+                          padding: '0.45rem 0.75rem',
+                          borderRadius: '0.5rem',
+                          border: comissaoTipo === 'porcentagem_fixa' ? '1px solid #f59e0b' : '1px solid var(--border-subtle)',
+                          background: comissaoTipo === 'porcentagem_fixa' ? 'rgba(245, 158, 11, 0.15)' : 'transparent',
+                          color: comissaoTipo === 'porcentagem_fixa' ? '#fbbf24' : 'var(--text-muted)',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Porcentagem Fixa (%)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setComissaoTipo('valor_fixo')}
+                        style={{
+                          padding: '0.45rem 0.75rem',
+                          borderRadius: '0.5rem',
+                          border: comissaoTipo === 'valor_fixo' ? '1px solid #f59e0b' : '1px solid var(--border-subtle)',
+                          background: comissaoTipo === 'valor_fixo' ? 'rgba(245, 158, 11, 0.15)' : 'transparent',
+                          color: comissaoTipo === 'valor_fixo' ? '#fbbf24' : 'var(--text-muted)',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Valor Fixo (R$)
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <div style={{ position: 'relative', width: '130px' }}>
+                        <span style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', fontSize: '0.8rem', fontWeight: 700 }}>
+                          {comissaoTipo === 'valor_fixo' ? 'R$' : '%'}
+                        </span>
+                        <input
+                          type="number"
+                          step={comissaoTipo === 'valor_fixo' ? '1.00' : '1'}
+                          min="0"
+                          value={comissaoValor}
+                          onChange={(e) => setComissaoValor(e.target.value)}
+                          className="input-field"
+                          placeholder={comissaoTipo === 'valor_fixo' ? '25.00' : '35'}
+                          style={{ paddingRight: '2.2rem', fontWeight: 700 }}
+                        />
+                      </div>
+
+                      {/* Simulação em tempo real */}
+                      {(() => {
+                        const pNum = parseFloat(preco.replace(',', '.')) || 0;
+                        const cVal = parseFloat(comissaoValor.replace(',', '.')) || 0;
+                        const vProf = comissaoTipo === 'valor_fixo' ? Math.min(pNum, cVal) : pNum * (cVal / 100);
+                        const vLoja = Math.max(0, pNum - vProf);
+
+                        return (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                            Com corte a <strong style={{ color: '#f8fafc' }}>R$ {pNum.toFixed(2)}</strong>: Barbeiro recebe{' '}
+                            <strong style={{ color: '#34d399' }}>R$ {vProf.toFixed(2)}</strong> e a Barbearia{' '}
+                            <strong style={{ color: '#38bdf8' }}>R$ {vLoja.toFixed(2)}</strong>.
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Description */}

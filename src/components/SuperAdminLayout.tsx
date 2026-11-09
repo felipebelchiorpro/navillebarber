@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Store, CreditCard, ArrowLeft, Terminal } from 'lucide-react';
+import { LayoutDashboard, Store, CreditCard, ArrowLeft, Terminal, GitFork } from 'lucide-react';
 
 export default function SuperAdminLayout() {
   const location = useLocation();
@@ -8,6 +8,7 @@ export default function SuperAdminLayout() {
   const isGlobal = location.pathname === '/admin' || location.pathname === '/admin/';
   const isLojas = location.pathname.startsWith('/admin/barbearias');
   const isFinanceiro = location.pathname.startsWith('/admin/financeiro');
+  const isSplit = location.pathname.startsWith('/admin/split') || location.pathname.startsWith('/superadmin/split');
   const isLogs = location.pathname.startsWith('/admin/logs') || location.pathname.startsWith('/superadmin/logs');
 
   return (
@@ -42,6 +43,17 @@ export default function SuperAdminLayout() {
             }`}
           >
             <Store size={16} /> Lojas Clientes
+          </Link>
+
+          <Link
+            to="/admin/split"
+            className={`flex items-center gap-2.5 px-3 py-2 rounded-xl font-medium text-xs transition-all ${
+              isSplit
+                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)]'
+                : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
+            }`}
+          >
+            <GitFork size={16} /> Split & Subcontas
           </Link>
 
           <Link

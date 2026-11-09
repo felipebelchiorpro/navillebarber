@@ -71,6 +71,7 @@ const formatBRL = (valor: number) =>
 const STATUS_UI: Record<Agendamento['status'], { label: string; border: string; badge: string }> = {
   pendente: { label: 'Pendente', border: 'border-l-amber-400', badge: 'text-amber-400 bg-amber-400/10' },
   confirmado: { label: 'Confirmado', border: 'border-l-orange-500', badge: 'text-orange-400 bg-orange-400/10' },
+  em_andamento: { label: 'Em Andamento', border: 'border-l-blue-500', badge: 'text-blue-400 bg-blue-400/10' },
   concluido: { label: 'Concluído', border: 'border-l-emerald-500', badge: 'text-emerald-400 bg-emerald-400/10' },
   cancelado: { label: 'Cancelado', border: 'border-l-zinc-600', badge: 'text-zinc-400 bg-zinc-400/10' }
 };

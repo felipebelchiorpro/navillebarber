@@ -16,8 +16,12 @@ import {
   UsersRound,
   Settings,
   MessageCircle,
-  Bot
+  Bot,
+  GitFork,
+  Lock,
+  ShieldAlert
 } from 'lucide-react';
+import SplitPaymentView from '../components/SplitPaymentView';
 import {
   Barbearia,
   Usuario,
@@ -115,6 +119,12 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
       e_publico: true,
     } as unknown as Barbearia;
   }, [barbearia]);
+
+  // Governança Estrita de Módulos (definidas no SuperAdmin)
+  const temModuloFinanceiro = Boolean(validBarbearia.modulo_financeiro);
+  const temModuloClube = Boolean(validBarbearia.vip_club_ativo || validBarbearia.modulo_clube_vip);
+  const temModuloWhatsApp = Boolean(validBarbearia.modulo_whatsapp);
+  const temModuloSplit = Boolean(validBarbearia.split_ativo ?? validBarbearia.modulo_split_asaas);
 
   const limiteCadeirasBadge = Math.max(
     1,
@@ -461,6 +471,30 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
     </>
   );
 
+  // Componente de Bloqueio Estrito de Módulos Inativos
+  const ModuloBloqueadoView: React.FC<{ modulo: string }> = ({ modulo }) => (
+    <div className="flex-1 flex flex-col items-center justify-center p-8 rounded-3xl bg-white/[0.02] border border-white/[0.05] text-center gap-3 my-auto">
+      <div className="w-14 h-14 rounded-2xl bg-zinc-800 text-zinc-400 flex items-center justify-center shadow-inner">
+        <Lock size={26} />
+      </div>
+      <div>
+        <span className="text-[10px] font-bold tracking-widest uppercase text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+          Módulo Não Contratado
+        </span>
+        <h3 className="text-base font-bold text-white mt-1.5">{modulo}</h3>
+        <p className="text-xs text-zinc-400 max-w-sm mt-1">
+          Este módulo está desativado para a sua barbearia no painel de governança. Entre em contato com o suporte ou administrador para ativá-lo.
+        </p>
+      </div>
+      <Link
+        to="/"
+        className="mt-3 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white font-semibold text-xs border border-white/10 transition-colors"
+      >
+        Voltar à Visão Geral
+      </Link>
+    </div>
+  );
+
   return (
     <div className="!flex !h-screen !w-full bg-[#050505] text-zinc-300 !p-6 !gap-8 overflow-hidden relative">
       
@@ -520,9 +554,12 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             <MonitorSmartphone size={16}/> PDV & Caixa do Dia
           </Link>
           
-          <Link className={getItemClass('/gastos')} to="/gastos">
-            <Receipt size={16}/> Controle de Gastos
-          </Link>
+          {/* MÓDULO FINANCEIRO: EXCLUSIVO SE ATIVO NO SUPERADMIN */}
+          {temModuloFinanceiro && (
+            <Link className={getItemClass('/gastos')} to="/gastos">
+              <Receipt size={16}/> Controle de Gastos
+            </Link>
+          )}
 
 
           {/* CATEGORIA: GESTÃO DA BARBEARIA */}
@@ -555,10 +592,13 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             <UsersRound size={16}/> Base de Clientes
           </Link>
 
-          <Link className={getItemClass('/clube', true)} to="/clube">
-            <div className="flex items-center gap-2.5"><Crown size={16}/> Clube de Assinaturas</div>
-            <span className="text-[9px] bg-orange-500/10 text-orange-500 px-1.5 py-0.5 rounded-full border border-orange-500/20 font-semibold shadow-[0_0_10px_rgba(249,115,22,0.2)]">Novo</span>
-          </Link>
+          {/* MÓDULO CLUBE DE ASSINATURAS: EXCLUSIVO SE ATIVO NO SUPERADMIN */}
+          {temModuloClube && (
+            <Link className={getItemClass('/clube', true)} to="/clube">
+              <div className="flex items-center gap-2.5"><Crown size={16}/> Clube de Assinaturas</div>
+              <span className="text-[9px] bg-orange-500/10 text-orange-500 px-1.5 py-0.5 rounded-full border border-orange-500/20 font-semibold shadow-[0_0_10px_rgba(249,115,22,0.2)]">VIP</span>
+            </Link>
+          )}
 
 
           {/* CATEGORIA: CONFIGURAÇÕES & INTEGRAÇÕES */}
@@ -568,15 +608,28 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             <Settings size={16}/> Regras da Agenda
           </Link>
           
-          <Link className={getItemClass('/whatsapp', true)} to="/whatsapp">
-            <div className="flex items-center gap-2.5"><MessageCircle size={16}/> WhatsApp Conexão</div>
-            <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1 font-semibold"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>Online</span>
-          </Link>
-          
-          <Link className={getItemClass('/automacoes', true)} to="/automacoes">
-            <div className="flex items-center gap-2.5"><Bot size={16}/> Automações Whats...</div>
-            <span className="text-[9px] bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded-full border border-indigo-500/20 font-semibold">Anti-Ban</span>
-          </Link>
+          {/* MÓDULO WHATSAPP & AUTOMAÇÕES: EXCLUSIVO SE ATIVO NO SUPERADMIN */}
+          {temModuloWhatsApp && (
+            <>
+              <Link className={getItemClass('/whatsapp', true)} to="/whatsapp">
+                <div className="flex items-center gap-2.5"><MessageCircle size={16}/> WhatsApp Conexão</div>
+                <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1 font-semibold"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>Online</span>
+              </Link>
+              
+              <Link className={getItemClass('/automacoes', true)} to="/automacoes">
+                <div className="flex items-center gap-2.5"><Bot size={16}/> Automações Whats...</div>
+                <span className="text-[9px] bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded-full border border-indigo-500/20 font-semibold">Anti-Ban</span>
+              </Link>
+            </>
+          )}
+
+          {/* MÓDULO SPLIT DE PAGAMENTOS & TERMINAIS: EXCLUSIVO SE ATIVO NO SUPERADMIN */}
+          {temModuloSplit && (
+            <Link className={getItemClass('/split', true)} to="/split">
+              <div className="flex items-center gap-2.5"><GitFork size={16}/> Split & Terminais</div>
+              <span className="text-[9px] bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded-full border border-indigo-500/20 font-semibold">D+0</span>
+            </Link>
+          )}
 
         </div>
 
@@ -650,10 +703,14 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
           <Route
             path="/gastos"
             element={
-              <RelatoriosManager
-                barbearia={validBarbearia}
-                profissionaisList={profissionaisList}
-              />
+              temModuloFinanceiro ? (
+                <RelatoriosManager
+                  barbearia={validBarbearia}
+                  profissionaisList={profissionaisList}
+                />
+              ) : (
+                <ModuloBloqueadoView modulo="Controle Financeiro / Gastos" />
+              )
             }
           />
           <Route
@@ -703,49 +760,82 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
           <Route
             path="/clube"
             element={
-              <ClubeVipManager
-                barbearia={validBarbearia}
-                servicesList={servicesList}
-                profissionaisList={profissionaisList}
-              />
+              temModuloClube ? (
+                <ClubeVipManager
+                  barbearia={validBarbearia}
+                  servicesList={servicesList}
+                  profissionaisList={profissionaisList}
+                />
+              ) : (
+                <ModuloBloqueadoView modulo="Clube de Assinaturas" />
+              )
             }
           />
           <Route
             path="/clube_vip"
             element={
-              <ClubeVipManager
-                barbearia={validBarbearia}
-                servicesList={servicesList}
-                profissionaisList={profissionaisList}
-              />
+              temModuloClube ? (
+                <ClubeVipManager
+                  barbearia={validBarbearia}
+                  servicesList={servicesList}
+                  profissionaisList={profissionaisList}
+                />
+              ) : (
+                <ModuloBloqueadoView modulo="Clube de Assinaturas" />
+              )
             }
           />
           <Route path="/regras" element={<AgendaView barbearia={barbearia} />} />
           <Route
             path="/whatsapp"
             element={
-              <WhatsAppManager
-                barbearia={validBarbearia}
-                onBarbeariaUpdated={onBarbeariaUpdated}
-              />
+              temModuloWhatsApp ? (
+                <WhatsAppManager
+                  barbearia={validBarbearia}
+                  onBarbeariaUpdated={onBarbeariaUpdated}
+                />
+              ) : (
+                <ModuloBloqueadoView modulo="WhatsApp & Automações" />
+              )
             }
           />
           <Route
             path="/automacoes"
             element={
-              <WhatsAppManager
-                barbearia={validBarbearia}
-                onBarbeariaUpdated={onBarbeariaUpdated}
-              />
+              temModuloWhatsApp ? (
+                <WhatsAppManager
+                  barbearia={validBarbearia}
+                  onBarbeariaUpdated={onBarbeariaUpdated}
+                />
+              ) : (
+                <ModuloBloqueadoView modulo="WhatsApp & Automações" />
+              )
             }
           />
           <Route
             path="/relatorios"
             element={
-              <RelatoriosManager
-                barbearia={validBarbearia}
-                profissionaisList={profissionaisList}
-              />
+              temModuloFinanceiro ? (
+                <RelatoriosManager
+                  barbearia={validBarbearia}
+                  profissionaisList={profissionaisList}
+                />
+              ) : (
+                <ModuloBloqueadoView modulo="Relatórios e Finanças" />
+              )
+            }
+          />
+          <Route
+            path="/split"
+            element={
+              temModuloSplit ? (
+                <SplitPaymentView
+                  barbearia={validBarbearia}
+                  onBarbeariaUpdated={onBarbeariaUpdated}
+                />
+              ) : (
+                <ModuloBloqueadoView modulo="Split de Pagamentos Asaas" />
+              )
             }
           />
           <Route

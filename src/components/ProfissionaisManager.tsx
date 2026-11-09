@@ -30,8 +30,11 @@ const TIPO_ATENDIMENTO_CONFIG: Record<
   Profissional['tipo_atendimento'],
   { label: string; badgeClass: string; desc: string }
 > = {
+  agendamento_geral: { label: 'Agendamento Geral', badgeClass: 'badge-blue', desc: 'Atende o público geral agendado' },
+  hibrido_clube_geral: { label: 'Híbrido (Clube & Geral)', badgeClass: 'badge-purple', desc: 'Atende tanto assinantes do Clube quanto agendamentos gerais' },
+  exclusivo_clube: { label: 'Exclusivo Clube VIP', badgeClass: 'badge-amber', desc: 'Disponível apenas para membros do Clube de Assinaturas' },
   agenda: { label: 'Apenas Agendamento', badgeClass: 'badge-blue', desc: 'Atende horários marcados previamente' },
-  ordem_chegada: { label: 'Ordem de Chegada', badgeClass: 'badge-amber', desc: 'Atende fila de espera por ordem de chegada' },
+  ordem_chegada: { label: 'Ordem de Chegada', badgeClass: 'badge-amber', desc: 'Atende fila de espera presencial' },
   ambos: { label: 'Agenda & Chegada', badgeClass: 'badge-purple', desc: 'Combina marcações prévias e fila presencial' },
 };
 
@@ -1019,9 +1022,11 @@ export const ProfissionaisManager: React.FC<ProfissionaisManagerProps> = ({
                     value={tipoAtendimento}
                     onChange={(e) => setTipoAtendimento(e.target.value as Profissional['tipo_atendimento'])}
                   >
-                    <option value="ambos">Ambos (Agenda & Fila)</option>
-                    <option value="agenda">Apenas Agendamento</option>
-                    <option value="ordem_chegada">Apenas Ordem de Chegada</option>
+                    <option value="hibrido_clube_geral">Híbrido (Clube VIP & Agendamento Geral)</option>
+                    <option value="agendamento_geral">Agendamento Geral (Apenas Público Geral)</option>
+                    <option value="exclusivo_clube">Exclusivo Clube VIP (Somente Assinantes)</option>
+                    <option value="ambos">Legado: Ambos (Agenda & Fila)</option>
+                    <option value="agenda">Legado: Apenas Agendamento</option>
                   </select>
                 </div>
 
