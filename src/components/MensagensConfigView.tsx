@@ -580,3 +580,4 @@ export const MensagensConfigView: React.FC<MensagensConfigViewProps> = ({
 };
 
 export default MensagensConfigView;
+

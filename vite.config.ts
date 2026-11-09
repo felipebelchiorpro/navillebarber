@@ -12,6 +12,11 @@ export default defineConfig(({ mode }) => {
     : 'https://sandbox.asaas.com/api/v3';
 
   return {
+    define: {
+      'process.env.ASAAS_API_URL': JSON.stringify(env.ASAAS_API_URL || env.VITE_ASAAS_API_URL || 'https://api.asaas.com/v3'),
+      'process.env.ASAAS_API_KEY': JSON.stringify(env.ASAAS_API_KEY || env.VITE_ASAAS_API_KEY || env.VITE_ASAAS_API_KEY_PRODUCTION || ''),
+      'process.env.ASAAS_MASTER_WALLET_ID': JSON.stringify(env.ASAAS_MASTER_WALLET_ID || env.VITE_ASAAS_MASTER_WALLET_ID || ''),
+    },
     resolve: {
       dedupe: ['react', 'react-dom'],
       alias: {

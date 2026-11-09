@@ -1123,30 +1123,87 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
 
       </div>
 
-      {/* REGRAS COMERCIAIS DO SPLIT */}
-      <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] flex flex-col gap-3">
+      {/* REGRAS COMERCIAIS & PRECIFICAÇÃO DO SPLIT */}
+      <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] flex flex-col gap-4">
         <div className="flex items-center justify-between pb-2 border-b border-white/5">
           <div className="flex items-center gap-2">
             <GitFork className="text-indigo-400" size={16} />
-            <span className="text-xs font-bold text-white">Regras Comerciais do Split</span>
+            <span className="text-xs font-bold text-white uppercase tracking-wider">Regras Comerciais & Precificação do Split</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-              Take-rate: R$ {Number(selectedTenant?.split_taxa_transacao || splitTaxaTransacao || 0.35).toFixed(2)}/op
-            </span>
             <button
               type="button"
               onClick={handleSalvarConfig}
               disabled={savingConfig || !selectedTenant}
-              className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-[0_0_12px_rgba(99,102,241,0.25)] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               {savingConfig ? <RefreshCw size={11} className="animate-spin" /> : <Save size={11} />}
-              <span>Salvar Regras</span>
+              <span>Salvar Regras & Valores</span>
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
+        {/* PRECIFICAÇÃO DO UPGRADE E TAKE-RATE */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-lg bg-black/40 border border-indigo-500/20">
+          {/* MENSALIDADE DO UPGRADE */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                <CreditCard className="text-indigo-400" size={13} />
+                Preço do Upgrade Mensal:
+              </label>
+              <span className="text-[9px] text-indigo-300 font-mono bg-indigo-500/10 px-1.5 py-0.5 rounded">R$/mês</span>
+            </div>
+            <div className="flex items-center gap-2 bg-white/[0.05] border border-white/10 rounded-lg px-3 py-1.5 focus-within:border-indigo-400 transition-all">
+              <span className="text-sm font-black text-indigo-400">R$</span>
+              <input
+                type="number"
+                step="0.01"
+                value={splitMensalidadeModulo}
+                onChange={e => setSplitMensalidadeModulo(Number(e.target.value))}
+                className="w-full bg-transparent font-black text-white text-sm outline-none"
+                placeholder="30.00"
+              />
+              <span className="text-xs text-zinc-400 font-semibold whitespace-nowrap">/mês</span>
+            </div>
+            <p className="text-[10px] text-zinc-400 leading-tight">
+              Mensalidade adicional para liberar o módulo de Split no plano da barbearia.
+            </p>
+          </div>
+
+          {/* TAKE-RATE NAVILLE */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+                Take-rate por Operação:
+              </label>
+              <span className="text-[9px] text-emerald-300 font-mono bg-emerald-500/10 px-1.5 py-0.5 rounded">R$/transação</span>
+            </div>
+            <div className="flex items-center gap-2 bg-white/[0.05] border border-white/10 rounded-lg px-3 py-1.5 focus-within:border-emerald-400 transition-all">
+              <span className="text-sm font-black text-emerald-400">R$</span>
+              <input
+                type="number"
+                step="0.01"
+                value={splitTaxaTransacao}
+                onChange={e => setSplitTaxaTransacao(Number(e.target.value))}
+                className="w-full bg-transparent font-black text-emerald-300 text-sm outline-none"
+                placeholder="0.35"
+              />
+              <span className="text-xs text-zinc-400 font-semibold whitespace-nowrap">/op</span>
+            </div>
+            <p className="text-[10px] text-zinc-400 leading-tight">
+              Tarifa retida pela plataforma em cada checkout após a franquia/carência.
+            </p>
+          </div>
+        </div>
+
+        {/* POLÍTICA DE CARÊNCIA E ISENÇÃO */}
+        <div className="flex flex-col gap-2">
+          <span className="text-[11px] font-bold text-zinc-300 uppercase tracking-wide">
+            Política de Carência & Isenção
+          </span>
+          <div className="grid grid-cols-3 gap-2">
           <button
             type="button"
             onClick={() => setSplitCarenciaTipo('dias')}
@@ -1224,6 +1281,7 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
             <span>Isenção vitalícia ativada: R$ 0,00 de retenção Naville em qualquer volume.</span>
           </div>
         )}
+        </div>
       </div>
 
       {/* 3. HARDWARE & MÉTODOS DE CAPTURA DE PAGAMENTO */}

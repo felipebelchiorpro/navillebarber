@@ -1057,40 +1057,76 @@ export default function SuperAdminLojasView() {
                     </button>
                   </div>
 
-                  {/* PREÇO DO UPGRADE MENSAL & TAKE-RATE */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-lg bg-black/40 border border-white/5 text-[10px]">
-                    <div className="flex items-center justify-between sm:justify-start gap-2">
-                      <span className="text-zinc-400 uppercase font-semibold">Mensalidade Módulo (Upgrade):</span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-zinc-500 font-bold">R$</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={valorSplitMensal}
-                          onChange={e => setValorSplitMensal(Number(e.target.value))}
-                          onBlur={() => handleUpdateMultiple({
-                            split_mensalidade_modulo: Number(valorSplitMensal),
-                            valor_modulo_split: Number(valorSplitMensal)
-                          })}
-                          className="w-16 bg-white/[0.04] border border-white/10 rounded px-1.5 py-0.5 text-right font-bold text-white outline-none focus:border-indigo-500 text-[10px]"
-                        />
-                        <span className="text-zinc-500">/mês</span>
+                  {/* PRECIFICAÇÃO E COBRANÇA DO UPGRADE (SPLIT) */}
+                  <div className="p-3.5 rounded-xl bg-gradient-to-r from-indigo-950/50 via-purple-950/30 to-black/50 border border-indigo-500/30 flex flex-col gap-3 shadow-inner">
+                    <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="text-indigo-400" size={16} />
+                        <span className="text-xs font-bold text-white uppercase tracking-wider">
+                          Precificação do Upgrade & Cobrança
+                        </span>
                       </div>
+                      <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded font-mono font-bold">
+                        Valor Adicional na Mensalidade
+                      </span>
                     </div>
 
-                    <div className="flex items-center justify-between sm:justify-start gap-2">
-                      <span className="text-zinc-400 uppercase font-semibold">Take-Rate:</span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-zinc-500 font-bold">R$</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={valorSplitTaxa}
-                          onChange={e => setValorSplitTaxa(Number(e.target.value))}
-                          onBlur={() => handleUpdateTenantField('split_taxa_transacao', Number(valorSplitTaxa))}
-                          className="w-14 bg-white/[0.04] border border-white/10 rounded px-1.5 py-0.5 text-right font-bold text-emerald-400 outline-none focus:border-emerald-500 text-[10px]"
-                        />
-                        <span className="text-zinc-500">/op</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* VALOR MENSALIDADE UPGRADE */}
+                      <div className="p-3 rounded-lg bg-black/50 border border-indigo-500/20 flex flex-col gap-1.5 hover:border-indigo-500/40 transition-colors">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-indigo-400 inline-block animate-pulse"></span>
+                            Preço do Upgrade Mensal:
+                          </label>
+                          <span className="text-[9px] text-indigo-300 font-mono bg-indigo-500/10 px-1.5 py-0.5 rounded">R$/mês</span>
+                        </div>
+                        <div className="flex items-center gap-2 bg-white/[0.06] border border-white/10 rounded-lg px-3 py-2 focus-within:border-indigo-400 focus-within:bg-white/[0.08] transition-all">
+                          <span className="text-sm font-black text-indigo-400">R$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={valorSplitMensal}
+                            onChange={e => setValorSplitMensal(Number(e.target.value))}
+                            onBlur={() => handleUpdateMultiple({
+                              split_mensalidade_modulo: Number(valorSplitMensal),
+                              valor_modulo_split: Number(valorSplitMensal)
+                            })}
+                            className="w-full bg-transparent font-black text-white text-base outline-none tracking-wide"
+                            placeholder="30.00"
+                          />
+                          <span className="text-xs text-zinc-400 font-semibold whitespace-nowrap">/mês</span>
+                        </div>
+                        <p className="text-[10px] text-zinc-400 leading-tight">
+                          Cobrado na assinatura mensal da barbearia quando o Split estiver ativo.
+                        </p>
+                      </div>
+
+                      {/* TAKE-RATE NAVILLE */}
+                      <div className="p-3 rounded-lg bg-black/50 border border-emerald-500/20 flex flex-col gap-1.5 hover:border-emerald-500/40 transition-colors">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+                            Take-rate por Operação:
+                          </label>
+                          <span className="text-[9px] text-emerald-300 font-mono bg-emerald-500/10 px-1.5 py-0.5 rounded">R$/transação</span>
+                        </div>
+                        <div className="flex items-center gap-2 bg-white/[0.06] border border-white/10 rounded-lg px-3 py-2 focus-within:border-emerald-400 focus-within:bg-white/[0.08] transition-all">
+                          <span className="text-sm font-black text-emerald-400">R$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={valorSplitTaxa}
+                            onChange={e => setValorSplitTaxa(Number(e.target.value))}
+                            onBlur={() => handleUpdateTenantField('split_taxa_transacao', Number(valorSplitTaxa))}
+                            className="w-full bg-transparent font-black text-emerald-300 text-base outline-none tracking-wide"
+                            placeholder="0.35"
+                          />
+                          <span className="text-xs text-zinc-400 font-semibold whitespace-nowrap">/op</span>
+                        </div>
+                        <p className="text-[10px] text-zinc-400 leading-tight">
+                          Tarifa Naville retida em cada transação de checkout após o período de carência.
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -1100,10 +1136,10 @@ export default function SuperAdminLojasView() {
                     <div className="flex items-center justify-between pb-2 border-b border-white/5">
                       <div className="flex items-center gap-2">
                         <GitFork className="text-indigo-400" size={16} />
-                        <span className="text-xs font-bold text-white">Regras Comerciais do Split</span>
+                        <span className="text-xs font-bold text-white">Regras de Carência e Gratuidade</span>
                       </div>
                       <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                        Take-rate: R$ {Number(selectedTenant.split_taxa_transacao || 0.35).toFixed(2)}/op
+                        Take-rate atual: R$ {Number(selectedTenant.split_taxa_transacao || 0.35).toFixed(2)}/op
                       </span>
                     </div>
 

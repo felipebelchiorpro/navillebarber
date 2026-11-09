@@ -45,29 +45,36 @@ export interface AssinaturaAsaas {
   [key: string]: any;
 }
 
-const FALLBACK_SANDBOX_KEY = '';
+// 1. CREDENCIAIS DE PRODUÇÃO DO ASAAS (VARIÁVEIS DE AMBIENTE COOLIFY / .ENV)
+export const ASAAS_URL =
+  (typeof process !== 'undefined' && process.env?.ASAAS_API_URL) ||
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_API_URL) ||
+  'https://api.asaas.com/v3';
+
+export const ASAAS_KEY =
+  (typeof process !== 'undefined' && process.env?.ASAAS_API_KEY) ||
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_API_KEY) ||
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_API_KEY_PRODUCTION) ||
+  '';
+
+export const MASTER_WALLET_ID =
+  (typeof process !== 'undefined' && process.env?.ASAAS_MASTER_WALLET_ID) ||
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_MASTER_WALLET_ID) ||
+  '';
 
 function getAsaasConfig() {
-  const isProd = import.meta.env.VITE_ASAAS_ENV === 'production';
-  const envKey = isProd
-    ? import.meta.env.VITE_ASAAS_API_KEY_PRODUCTION
-    : import.meta.env.VITE_ASAAS_API_KEY_SANDBOX;
-
-  const apiKey =
-    envKey && envKey !== 'sua_chave_sandbox_aqui' && envKey !== 'sua_chave_producao_aqui'
-      ? envKey
-      : '';
+  const apiKey = ASAAS_KEY;
 
   if (!apiKey) {
-    throw new Error('Chave de API do Asaas não configurada no arquivo .env');
+    throw new Error('Chave de API do Asaas (ASAAS_API_KEY) não configurada nas variáveis de ambiente do servidor.');
   }
 
-  // Em ambiente de desenvolvimento Vite, usa o proxy configurado (/api/asaas) para contornar CORS
-  const baseUrl = import.meta.env.DEV
+  // Em ambiente de desenvolvimento local Vite, usa o proxy configurado (/api/asaas) para contornar CORS
+  const baseUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV)
     ? '/api/asaas'
-    : (isProd ? 'https://api.asaas.com/api/v3' : 'https://sandbox.asaas.com/api/v3');
+    : ASAAS_URL;
 
-  return { apiKey, baseUrl, isProd };
+  return { apiKey, baseUrl, isProd: true };
 }
 
 /**
@@ -370,28 +377,14 @@ export interface SubcontaAsaasResponse {
 }
 
 /**
- * Cria uma subconta no Asaas para o Barbeiro / Parceiro
+ * Cria uma subconta no Asaas para a Barbearia ou Barbeiro / Parceiro
  */
 export async function criarSubcontaAsaas(
   dados: SubcontaAsaasPayload
 ): Promise<SubcontaAsaasResponse> {
-  let config;
-  try {
-    config = getAsaasConfig();
-  } catch {
-    // Em fallback ou sem token configurado, gera IDs de simulação para permitir testes
-    const mockId = `acc_${Math.random().toString(36).substring(2, 10)}`;
-    const mockWallet = `wal_${Math.random().toString(36).substring(2, 10)}`;
-    return {
-      id: mockId,
-      name: dados.name,
-      email: dados.email,
-      cpfCnpj: dados.cpfCnpj,
-      walletId: mockWallet,
-    };
-  }
+  console.log('[ASAAS PROD] Criando subconta para:', dados.name);
 
-  const { apiKey, baseUrl } = config;
+  const { apiKey, baseUrl } = getAsaasConfig();
   const docLimpo = (dados.cpfCnpj || '').replace(/\D/g, '');
   const telLimpo = (dados.mobilePhone || dados.phone || '11999999999').replace(/\D/g, '');
   const cepLimpo = (dados.postalCode || '13770000').replace(/\D/g, '');
@@ -425,12 +418,16 @@ export async function criarSubcontaAsaas(
       data.errors?.[0]?.description ||
       data.message ||
       `Erro ao criar subconta no Asaas (${response.status})`;
+    console.error('[ASAAS PROD] Falha na criação da subconta:', errorMsg, data);
     throw new Error(errorMsg);
   }
 
+  const walletId = data.walletId || data.id;
+  console.log('[ASAAS PROD] Resposta Asaas WalletId:', walletId);
+
   return {
     ...data,
-    walletId: data.walletId || data.id,
+    walletId,
   } as SubcontaAsaasResponse;
 }
 
