@@ -42,6 +42,7 @@ import { ProfissionaisManager } from '../components/ProfissionaisManager';
 import { ProdutosManager } from '../components/ProdutosManager';
 import { ClubeVipManager } from '../components/ClubeVipManager';
 import { WhatsAppManager } from '../components/WhatsAppManager';
+import { MensagensConfigView } from '../components/MensagensConfigView';
 import { PlanoAssinaturaManager } from '../components/PlanoAssinaturaManager';
 import { RelatoriosManager } from '../components/RelatoriosManager';
 import { AgendaManager } from '../components/AgendaManager';
@@ -804,6 +805,32 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             element={
               temModuloWhatsApp ? (
                 <WhatsAppManager
+                  barbearia={validBarbearia}
+                  onBarbeariaUpdated={onBarbeariaUpdated}
+                />
+              ) : (
+                <ModuloBloqueadoView modulo="WhatsApp & Automações" />
+              )
+            }
+          />
+          <Route
+            path="/mensagens"
+            element={
+              temModuloWhatsApp ? (
+                <MensagensConfigView
+                  barbearia={validBarbearia}
+                  onBarbeariaUpdated={onBarbeariaUpdated}
+                />
+              ) : (
+                <ModuloBloqueadoView modulo="WhatsApp & Automações" />
+              )
+            }
+          />
+          <Route
+            path="/templates_whatsapp"
+            element={
+              temModuloWhatsApp ? (
+                <MensagensConfigView
                   barbearia={validBarbearia}
                   onBarbeariaUpdated={onBarbeariaUpdated}
                 />

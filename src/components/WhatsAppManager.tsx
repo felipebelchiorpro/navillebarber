@@ -43,13 +43,14 @@ import {
   clientesService
 } from '../services/pocketbase';
 import { evolutionApi } from '../services/evolutionApi';
+import MensagensConfigView from './MensagensConfigView';
 
 interface WhatsAppManagerProps {
   barbearia: Barbearia;
   onBarbeariaUpdated?: (updated: Barbearia) => void;
 }
 
-type SubTab = 'emparelhamento' | 'templates' | 'historico';
+type SubTab = 'emparelhamento' | 'notificacoes_auto' | 'templates' | 'historico';
 
 const GATILHOS_LABEL: Record<TipoGatilhoWhatsapp, { label: string; cor: string; desc: string }> = {
   confirmacao_agendamento: {
@@ -629,6 +630,14 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveSubTab('notificacoes_auto')}
+          className={`nav-tab-btn ${activeSubTab === 'notificacoes_auto' ? 'active' : ''}`}
+        >
+          <Sparkles style={{ width: '1.05rem', height: '1.05rem', color: '#10b981' }} />
+          <span>Gatilhos Automáticos (6)</span>
+        </button>
+
+        <button
           onClick={() => setActiveSubTab('templates')}
           className={`nav-tab-btn ${activeSubTab === 'templates' ? 'active' : ''}`}
         >
@@ -1069,6 +1078,16 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({
           </div>
 
         </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* ABA: TEMPLATES DE NOTIFICAÇÕES AUTOMÁTICAS (6 GATILHOS)     */}
+      {/* ============================================================ */}
+      {activeSubTab === 'notificacoes_auto' && (
+        <MensagensConfigView
+          barbearia={barbearia}
+          onBarbeariaUpdated={onBarbeariaUpdated}
+        />
       )}
 
       {/* ============================================================ */}

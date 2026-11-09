@@ -394,19 +394,20 @@ export async function criarSubcontaAsaas(
   const { apiKey, baseUrl } = config;
   const docLimpo = (dados.cpfCnpj || '').replace(/\D/g, '');
   const telLimpo = (dados.mobilePhone || dados.phone || '11999999999').replace(/\D/g, '');
+  const cepLimpo = (dados.postalCode || '13770000').replace(/\D/g, '');
 
   const payload: Record<string, any> = {
     name: dados.name,
     email: dados.email,
     cpfCnpj: docLimpo,
     mobilePhone: telLimpo,
+    address: dados.address || 'Rua Principal',
+    addressNumber: dados.addressNumber || 'S/N',
+    postalCode: cepLimpo,
     incomeValue: dados.incomeValue || 2500,
   };
 
-  if (dados.address) payload.address = dados.address;
-  if (dados.addressNumber) payload.addressNumber = dados.addressNumber;
   if (dados.province) payload.province = dados.province;
-  if (dados.postalCode) payload.postalCode = dados.postalCode.replace(/\D/g, '');
 
   const response = await fetch(`${baseUrl}/accounts`, {
     method: 'POST',
@@ -427,7 +428,39 @@ export async function criarSubcontaAsaas(
     throw new Error(errorMsg);
   }
 
-  return data as SubcontaAsaasResponse;
+  return {
+    ...data,
+    walletId: data.walletId || data.id,
+  } as SubcontaAsaasResponse;
+}
+
+/**
+ * Provisiona ou atualiza subconta no Asaas para a Barbearia (Tenant) com payload sanitizado
+ */
+export async function provisionarSubcontaBarbearia(
+  barbearia: any,
+  chavePix?: string
+): Promise<SubcontaAsaasResponse> {
+  const chavePixLimpa = (chavePix || barbearia.pix_chave_repasse || '').replace(/\D/g, '');
+  const docCadastrado = (barbearia.documento || barbearia.cpf_cnpj || barbearia.cnpj || '').replace(/\D/g, '');
+
+  const documentoFinal =
+    docCadastrado ||
+    (chavePixLimpa.length === 11 || chavePixLimpa.length === 14
+      ? chavePixLimpa
+      : chavePixLimpa.padEnd(11, '0'));
+
+  const payload: SubcontaAsaasPayload = {
+    name: barbearia.nome || 'Barbearia Parceira',
+    email: barbearia.email_dono || barbearia.email || `${barbearia.slug || 'loja'}@navillebarber.com`,
+    cpfCnpj: documentoFinal,
+    mobilePhone: (barbearia.telefone || '').replace(/\D/g, '') || '11999999999',
+    address: barbearia.endereco || 'Rua Principal',
+    addressNumber: barbearia.numero || 'S/N',
+    postalCode: (barbearia.cep || '13770000').replace(/\D/g, '') || '13770000',
+  };
+
+  return await criarSubcontaAsaas(payload);
 }
 
 /**

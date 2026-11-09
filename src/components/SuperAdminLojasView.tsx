@@ -101,6 +101,8 @@ export default function SuperAdminLojasView() {
   const [valorFinanceiro, setValorFinanceiro] = useState<number>(29.9);
   const [valorWhatsApp, setValorWhatsApp] = useState<number>(39.9);
   const [valorAssessor, setValorAssessor] = useState<number>(59.9);
+  const [valorSplitMensal, setValorSplitMensal] = useState<number>(30.0);
+  const [valorSplitTaxa, setValorSplitTaxa] = useState<number>(0.35);
 
   // Estados dos Terminais de Pagamento da Loja Selecionada
   const [terminaisTenant, setTerminaisTenant] = useState<any[]>([]);
@@ -146,6 +148,8 @@ export default function SuperAdminLojasView() {
     setValorFinanceiro(tenant.valor_modulo_financeiro ?? 29.9);
     setValorWhatsApp(tenant.valor_modulo_whatsapp ?? 39.9);
     setValorAssessor(tenant.valor_modulo_assessor ?? 59.9);
+    setValorSplitMensal(tenant.split_mensalidade_modulo ?? tenant.valor_modulo_split ?? 30.0);
+    setValorSplitTaxa(tenant.split_taxa_transacao ?? 0.35);
   };
 
   const handleSelectTenant = (tenant: any) => {
@@ -213,6 +217,9 @@ export default function SuperAdminLojasView() {
       valor_modulo_financeiro: Number(valorFinanceiro) || 0,
       valor_modulo_whatsapp: Number(valorWhatsApp) || 0,
       valor_modulo_assessor: Number(valorAssessor) || 0,
+      split_mensalidade_modulo: Number(valorSplitMensal) || 0,
+      valor_modulo_split: Number(valorSplitMensal) || 0,
+      split_taxa_transacao: Number(valorSplitTaxa) || 0.35,
     });
   };
 
@@ -320,7 +327,10 @@ export default function SuperAdminLojasView() {
     const custoFin = tenant.modulo_financeiro ? (tenant.valor_modulo_financeiro ?? valorFinanceiro) : 0;
     const custoWpp = tenant.modulo_whatsapp ? (tenant.valor_modulo_whatsapp ?? valorWhatsApp) : 0;
     const custoAss = tenant.modulo_assessor ? (tenant.valor_modulo_assessor ?? valorAssessor) : 0;
-    return Number((97.0 + custoCadeiras + custoClube + custoFin + custoWpp + custoAss).toFixed(2));
+    const custoSplit = (tenant.split_ativo || tenant.modulo_split_asaas)
+      ? Number(tenant.split_mensalidade_modulo ?? tenant.valor_modulo_split ?? valorSplitMensal ?? 0)
+      : 0;
+    return Number((97.0 + custoCadeiras + custoClube + custoFin + custoWpp + custoAss + custoSplit).toFixed(2));
   };
 
   const calcularProRataParaDia = (diaEscolhido: number, valorMensal: number) => {
@@ -1045,6 +1055,44 @@ export default function SuperAdminLojasView() {
                         } top-0.5 absolute left-0`}
                       />
                     </button>
+                  </div>
+
+                  {/* PREÇO DO UPGRADE MENSAL & TAKE-RATE */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-lg bg-black/40 border border-white/5 text-[10px]">
+                    <div className="flex items-center justify-between sm:justify-start gap-2">
+                      <span className="text-zinc-400 uppercase font-semibold">Mensalidade Módulo (Upgrade):</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-zinc-500 font-bold">R$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={valorSplitMensal}
+                          onChange={e => setValorSplitMensal(Number(e.target.value))}
+                          onBlur={() => handleUpdateMultiple({
+                            split_mensalidade_modulo: Number(valorSplitMensal),
+                            valor_modulo_split: Number(valorSplitMensal)
+                          })}
+                          className="w-16 bg-white/[0.04] border border-white/10 rounded px-1.5 py-0.5 text-right font-bold text-white outline-none focus:border-indigo-500 text-[10px]"
+                        />
+                        <span className="text-zinc-500">/mês</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between sm:justify-start gap-2">
+                      <span className="text-zinc-400 uppercase font-semibold">Take-Rate:</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-zinc-500 font-bold">R$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={valorSplitTaxa}
+                          onChange={e => setValorSplitTaxa(Number(e.target.value))}
+                          onBlur={() => handleUpdateTenantField('split_taxa_transacao', Number(valorSplitTaxa))}
+                          className="w-14 bg-white/[0.04] border border-white/10 rounded px-1.5 py-0.5 text-right font-bold text-emerald-400 outline-none focus:border-emerald-500 text-[10px]"
+                        />
+                        <span className="text-zinc-500">/op</span>
+                      </div>
+                    </div>
                   </div>
 
                   {/* REGRAS COMERCIAIS DO SPLIT */}

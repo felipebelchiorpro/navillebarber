@@ -37,7 +37,7 @@ import {
   Monitor
 } from 'lucide-react';
 import { pb, Barbearia, Profissional, TerminalPagamento } from '../services/pocketbase';
-import { criarSubcontaAsaas, calcularTaxaNavilleSplit } from '../lib/asaas';
+import { criarSubcontaAsaas, provisionarSubcontaBarbearia, calcularTaxaNavilleSplit } from '../lib/asaas';
 
 interface SplitPaymentViewProps {
   tenant?: Barbearia | any;
@@ -112,6 +112,26 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
   const [frequenciaLiquidacao, setFrequenciaLiquidacao] = useState<string>('d0_instantaneo');
   const [savingRepasse, setSavingRepasse] = useState(false);
   const [repasseSuccess, setRepasseSuccess] = useState(false);
+
+  // Toast Flutuante de Feedback Visual
+  const [toast, setToast] = useState<{
+    id: string;
+    tipo: 'sucesso' | 'erro' | 'info';
+    titulo?: string;
+    mensagem: string;
+  } | null>(null);
+
+  const dispararToast = (tipo: 'sucesso' | 'erro' | 'info', mensagem: string, titulo?: string) => {
+    setToast({
+      id: Math.random().toString(),
+      tipo,
+      titulo,
+      mensagem,
+    });
+    setTimeout(() => {
+      setToast((prev) => (prev?.mensagem === mensagem ? null : prev));
+    }, 6000);
+  };
 
   // Estados de Hardware & Canais de Captura
   const [canalCaptura, setCanalCaptura] = useState<'display_pix' | 'tap_phone' | 'smart_pos'>(
@@ -395,29 +415,99 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
     }
   };
 
-  // Salvar Configuração de Repasse Bancário
+  // Salvar Configuração de Repasse Bancário e Provisionar Subconta no Asaas
   const handleSalvarRepasse = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!selectedTenant) return;
+    if (!selectedTenant) {
+      dispararToast('erro', 'Nenhuma barbearia selecionada.', 'Erro');
+      return;
+    }
+
+    const chaveLimpa = pixChaveRepasse.trim();
+
+    // 1. Validação explícita antes do submit: se vazia ou menor que tamanho mínimo
+    if (!chaveLimpa || chaveLimpa.length < 5) {
+      dispararToast('erro', 'Preencha uma chave Pix válida.', 'Validação');
+      return;
+    }
+
     setSavingRepasse(true);
     setRepasseSuccess(false);
 
     try {
-      const patch = {
-        pix_tipo_chave: pixTipoChave,
-        pix_chave_repasse: pixChaveRepasse.trim(),
-        banco_nome: bancoNome.trim(),
+      // 2. Sanitização e montagem do payload Asaas
+      const chavePixNumeros = chaveLimpa.replace(/\D/g, '');
+      const docCadastrado = (
+        selectedTenant.documento ||
+        selectedTenant.cpf_cnpj ||
+        selectedTenant.cnpj ||
+        ''
+      ).replace(/\D/g, '');
+
+      // Prioriza documento cadastrado ou a chave Pix limpa
+      const cpfCnpjFinal =
+        docCadastrado ||
+        (chavePixNumeros.length === 11 || chavePixNumeros.length === 14
+          ? chavePixNumeros
+          : chavePixNumeros.padEnd(11, '0'));
+
+      const payloadAsaas = {
+        name: selectedTenant.nome || 'Barbearia Parceira',
+        email:
+          selectedTenant.email_dono ||
+          selectedTenant.email ||
+          `${selectedTenant.slug || 'loja'}@navillebarber.com`,
+        cpfCnpj: cpfCnpjFinal,
+        mobilePhone: (selectedTenant.telefone || '').replace(/\D/g, '') || '11999999999',
+        address: selectedTenant.endereco || 'Rua Principal',
+        addressNumber: selectedTenant.numero || 'S/N',
+        postalCode: (selectedTenant.cep || '13770000').replace(/\D/g, '') || '13770000',
       };
+
+      // 3. Provisionamento da Subconta no Asaas (se não houver wallet_id)
+      let walletIdFinal = selectedTenant.asaas_wallet_id;
+      let accountIdFinal = selectedTenant.asaas_account_id || selectedTenant.asaas_id;
+
+      if (!walletIdFinal) {
+        const subcontaRes = await criarSubcontaAsaas(payloadAsaas);
+        walletIdFinal = subcontaRes.walletId;
+        accountIdFinal = subcontaRes.id;
+      }
+
+      // 4. Persistência dos dados e do walletId no PocketBase
+      const patch: Record<string, any> = {
+        pix_tipo_chave: pixTipoChave,
+        pix_chave_repasse: chaveLimpa,
+        banco_nome: bancoNome.trim(),
+        asaas_wallet_id: walletIdFinal,
+      };
+
+      if (accountIdFinal) {
+        patch.asaas_account_id = accountIdFinal;
+      }
 
       const updated = await pb.collection('barbearias').update(selectedTenant.id, patch);
       setSelectedTenant(updated);
+      setAsaasWalletId(walletIdFinal || '');
       if (onUpdateTenant) onUpdateTenant(updated);
 
       setRepasseSuccess(true);
-      setTimeout(() => setRepasseSuccess(false), 3000);
+      setTimeout(() => setRepasseSuccess(false), 3500);
+
+      // Toast de sucesso com walletId retornado
+      dispararToast(
+        'sucesso',
+        `Repasse salvo e subconta vinculada com sucesso! Wallet ID: ${walletIdFinal}`,
+        'Subconta Asaas Ativa'
+      );
     } catch (err: any) {
-      console.error('Erro ao salvar conta bancária de repasse:', err);
-      alert(err.message || 'Falha ao salvar dados de repasse bancário.');
+      console.error('Erro ao provisionar subconta e salvar repasse:', err);
+      const mensagemErro =
+        err?.message ||
+        (typeof err === 'string'
+          ? err
+          : 'Falha ao salvar dados de repasse ou comunicar com o Asaas.');
+      dispararToast('erro', mensagemErro, 'Erro no Asaas / PocketBase');
     } finally {
       setSavingRepasse(false);
     }
@@ -699,8 +789,42 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
   }, [profissionais, buscaProf]);
 
   return (
-    <div className="flex flex-col gap-5 text-white max-w-5xl mx-auto w-full font-sans animate-in fade-in duration-300">
+    <div className="flex flex-col gap-5 text-white max-w-5xl mx-auto w-full font-sans animate-in fade-in duration-300 relative">
       
+      {/* Toast Flutuante de Feedback Visual */}
+      {toast && (
+        <div className="fixed top-5 right-5 z-50 max-w-sm sm:max-w-md w-full animate-in slide-in-from-top-4 fade-in duration-300">
+          <div
+            className={`p-4 rounded-xl border backdrop-blur-xl shadow-2xl flex items-start gap-3 ${
+              toast.tipo === 'sucesso'
+                ? 'bg-emerald-950/90 border-emerald-500/40 text-emerald-200 shadow-emerald-500/10'
+                : toast.tipo === 'erro'
+                ? 'bg-rose-950/90 border-rose-500/40 text-rose-200 shadow-rose-500/10'
+                : 'bg-zinc-950/90 border-white/20 text-zinc-200 shadow-zinc-900/30'
+            }`}
+          >
+            {toast.tipo === 'sucesso' ? (
+              <CheckCircle2 className="text-emerald-400 shrink-0 mt-0.5" size={18} />
+            ) : toast.tipo === 'erro' ? (
+              <AlertCircle className="text-rose-400 shrink-0 mt-0.5" size={18} />
+            ) : (
+              <Info className="text-sky-400 shrink-0 mt-0.5" size={18} />
+            )}
+            <div className="flex-1 text-xs">
+              {toast.titulo && <p className="font-bold mb-0.5 tracking-wide">{toast.titulo}</p>}
+              <p className="leading-relaxed whitespace-pre-wrap">{toast.mensagem}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToast(null)}
+              className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 1. HEADER & INTRODUÇÃO EXECUTIVA */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] backdrop-blur-md shadow-xl">
         <div className="flex items-center gap-3">
@@ -1451,7 +1575,7 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
                 className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 {savingRepasse ? <RefreshCw size={11} className="animate-spin" /> : <Save size={11} />}
-                <span>{savingRepasse ? 'Salvando...' : 'Salvar Repasse'}</span>
+                <span>{savingRepasse ? 'Salvando e criando subconta...' : 'Salvar Repasse'}</span>
               </button>
             </div>
           </div>

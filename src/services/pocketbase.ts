@@ -78,6 +78,7 @@ export interface Barbearia {
   split_contador_mes_atual?: number;
   split_taxa_transacao?: number;
   split_mensalidade_modulo?: number;
+  templates_whatsapp?: Record<string, { ativo?: boolean; texto: string }>;
   created?: string;
   updated?: string;
 }
