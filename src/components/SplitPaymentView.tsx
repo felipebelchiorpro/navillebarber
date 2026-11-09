@@ -963,48 +963,77 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
 
             {/* Wallet ID da Barbearia (Tenant) */}
             <div className="mt-3">
-              <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">
-                Wallet ID da Barbearia (Asaas)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                  Wallet ID da Barbearia (Asaas)
+                </label>
+                {(selectedTenant?.asaas_wallet_id || asaasWalletId) ? (
+                  <span className="text-[9px] font-bold font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1 shadow-sm">
+                    <CheckCircle2 size={10} />
+                    Gerado via Asaas
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-bold font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 flex items-center gap-1">
+                    <Clock size={10} />
+                    Pendente
+                  </span>
+                )}
+              </div>
+
               <div
                 className={`flex items-center border rounded-lg px-2.5 py-1.5 transition-colors ${
-                  asaasWalletId
+                  (selectedTenant?.asaas_wallet_id || asaasWalletId)
                     ? 'bg-emerald-500/[0.04] border-emerald-500/30'
-                    : 'bg-white/[0.03] border-white/10'
+                    : 'bg-white/[0.02] border-white/10'
                 }`}
               >
                 <Wallet
-                  className={asaasWalletId ? 'text-emerald-400 mr-2 shrink-0' : 'text-zinc-500 mr-2 shrink-0'}
+                  className={(selectedTenant?.asaas_wallet_id || asaasWalletId) ? 'text-emerald-400 mr-2 shrink-0' : 'text-zinc-500 mr-2 shrink-0'}
                   size={13}
                 />
                 <input 
                   type="text"
-                  placeholder="wal_000000000000 (Gerado automaticamente ao salvar repasse)"
-                  value={asaasWalletId}
+                  placeholder="Aguardando geração da subconta ao salvar dados bancários"
+                  value={selectedTenant?.asaas_wallet_id || asaasWalletId || ''}
                   readOnly={true}
-                  className="w-full bg-transparent text-xs text-white outline-none font-mono placeholder:text-zinc-600 cursor-default select-all"
-                  title="Identificador exclusivo da subconta da barbearia no Asaas (somente leitura)"
+                  disabled={true}
+                  className="w-full bg-transparent text-xs text-white outline-none font-mono placeholder:text-zinc-500 placeholder:italic cursor-not-allowed select-all"
+                  title="Identificador exclusivo da subconta da barbearia no Asaas (gerado automaticamente)"
                 />
-                {asaasWalletId && (
+                {(selectedTenant?.asaas_wallet_id || asaasWalletId) && (
                   <span className="text-[9px] font-bold font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 whitespace-nowrap ml-2">
                     Conectado
                   </span>
                 )}
               </div>
-              <p className="text-[9px] text-zinc-500 mt-1">
-                {asaasWalletId
-                  ? 'Subconta vinculada e pronta para receber rateios automáticos no Asaas.'
-                  : 'Criado e vinculado automaticamente via API Asaas ao salvar os dados de repasse abaixo.'}
+
+              <p className="text-[10px] mt-1.5 leading-relaxed">
+                {(selectedTenant?.asaas_wallet_id || asaasWalletId) ? (
+                  <span className="text-emerald-400/90 flex items-center gap-1 font-medium">
+                    <CheckCircle2 size={11} className="inline shrink-0" />
+                    Subconta vinculada e pronta para receber rateios automáticos no Asaas.
+                  </span>
+                ) : (
+                  <span className="text-amber-400/80 flex items-center gap-1 font-medium">
+                    <Clock size={11} className="inline shrink-0 text-amber-400" />
+                    Aguardando geração da subconta ao salvar dados bancários
+                  </span>
+                )}
               </p>
             </div>
           </div>
 
           <div className="flex flex-col gap-2 pt-2 border-t border-white/5">
-            <div className="p-2.5 rounded-lg bg-indigo-500/5 border border-indigo-500/10 flex items-start gap-2">
+            <div className="p-2.5 rounded-lg bg-indigo-500/5 border border-indigo-500/15 flex items-start gap-2.5">
               <Info className="text-indigo-400 shrink-0 mt-0.5" size={14} />
-              <p className="text-[10px] text-zinc-400 leading-normal">
-                O Asaas realiza o split em D+0. A transferência para as subcontas é instantânea assim que o Pix é compensado.
-              </p>
+              <div className="flex flex-col gap-1">
+                <p className="text-[10px] text-zinc-300 leading-relaxed">
+                  <strong className="text-white font-semibold">Roteamento da Taxa Naville:</strong> O repasse da taxa de retenção da plataforma ({tipoTaxa === 'fixa' ? `R$ ${taxaValor.toFixed(2)}` : `${taxaValor}%`}) é roteado automaticamente no backend para a conta principal via <code className="text-indigo-300 bg-indigo-950/60 border border-indigo-500/30 px-1 py-0.2 rounded font-mono text-[9px]">ASAAS_MASTER_WALLET_ID</code>, dispensando qualquer configuração manual de carteira.
+                </p>
+                <p className="text-[9px] text-zinc-400">
+                  O Asaas realiza o split em D+0. A transferência para as subcontas é instantânea assim que o Pix é compensado.
+                </p>
+              </div>
             </div>
 
             <div className="flex items-center justify-between mt-1">
