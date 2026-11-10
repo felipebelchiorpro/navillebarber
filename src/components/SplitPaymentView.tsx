@@ -550,12 +550,15 @@ export default function SplitPaymentView({
       );
     } catch (err: any) {
       console.error('Erro ao provisionar subconta e salvar repasse:', err);
-      const mensagemErro =
+      let mensagemErro =
         err?.message ||
         (typeof err === 'string'
           ? err
           : 'Falha ao salvar dados de repasse ou comunicar com o Asaas.');
-      dispararToast('erro', mensagemErro, 'Erro no Asaas / PocketBase');
+      if (mensagemErro.toLowerCase().includes('pessoa física') || mensagemErro.toLowerCase().includes('subcontas')) {
+        mensagemErro = 'A conta principal do Asaas (onde a API KEY foi gerada) é de Pessoa Física (CPF). Para o Asaas permitir criar subcontas automáticas de split, a conta-mãe precisa ser PJ (CNPJ). Você também pode colar o Wallet ID diretamente no campo acima.';
+      }
+      dispararToast('erro', mensagemErro, 'Exigência Asaas: Conta Master PJ');
     } finally {
       setSavingRepasse(false);
     }
@@ -1124,12 +1127,11 @@ export default function SplitPaymentView({
                 />
                 <input 
                   type="text"
-                  placeholder="Aguardando geração da subconta ao salvar dados bancários"
-                  value={selectedTenant?.asaas_wallet_id || asaasWalletId || ''}
-                  readOnly={true}
-                  disabled={true}
-                  className="w-full bg-transparent text-xs text-white outline-none font-mono placeholder:text-zinc-500 placeholder:italic cursor-not-allowed select-all"
-                  title="Identificador exclusivo da subconta da barbearia no Asaas (gerado automaticamente)"
+                  placeholder="Aguardando geração da subconta ou digite o Wallet ID (ex: cus_... / acc_...)"
+                  value={asaasWalletId}
+                  onChange={(e) => setAsaasWalletId(e.target.value)}
+                  className="w-full bg-transparent text-xs text-white outline-none font-mono placeholder:text-zinc-500 placeholder:italic select-all"
+                  title="Identificador exclusivo da subconta da barbearia no Asaas"
                 />
                 {(selectedTenant?.asaas_wallet_id || asaasWalletId) && (
                   <span className="text-[9px] font-bold font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 whitespace-nowrap ml-2">
