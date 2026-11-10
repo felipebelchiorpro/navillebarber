@@ -37,12 +37,12 @@ import {
   Zap,
   Monitor,
   SmartphoneNfc,
-  RotateCcw,
-  Key
+  RotateCcw
 } from 'lucide-react';
 import SplitPaymentView from './SplitPaymentView';
 import { pb } from '../lib/pocketbase';
 import {
+  sincronizarTenantNoBackend,
   criarClienteAsaas,
   criarCobrancaAsaas,
   criarAssinaturaAsaas,
@@ -50,9 +50,6 @@ import {
   atualizarClienteAsaas,
   atualizarCobrancaAsaas,
   calcularTaxaNavilleSplit,
-  obterAsaasApiKey,
-  obterAsaasMasterWalletId,
-  salvarCredenciaisAsaasEmMemoria,
   CobrancaAsaas,
   AsaasBillingType
 } from '../lib/asaas';
@@ -108,19 +105,6 @@ export default function SuperAdminLojasView() {
   const [valorAssessor, setValorAssessor] = useState<number>(59.9);
   const [valorSplitMensal, setValorSplitMensal] = useState<number>(30.0);
   const [valorSplitTaxa, setValorSplitTaxa] = useState<number>(0.35);
-
-  // Estados de Configuração da Chave Asaas em Tempo Real
-  const [isConfigAsaasModalOpen, setIsConfigAsaasModalOpen] = useState(false);
-  const [asaasKeyInput, setAsaasKeyInput] = useState(obterAsaasApiKey() || '');
-  const [asaasMasterWalletInput, setAsaasMasterWalletInput] = useState(obterAsaasMasterWalletId() || '');
-
-  const handleSalvarChavesAsaas = (e: React.FormEvent) => {
-    e.preventDefault();
-    salvarCredenciaisAsaasEmMemoria(asaasKeyInput.trim(), asaasMasterWalletInput.trim());
-    setIsConfigAsaasModalOpen(false);
-    setSaveFeedback('Credenciais Asaas salvas com sucesso!');
-    setTimeout(() => setSaveFeedback(''), 3000);
-  };
 
   const handleResetarAsaas = async () => {
     if (!selectedTenant) return;
@@ -271,27 +255,20 @@ export default function SuperAdminLojasView() {
     if (!selectedTenant) return;
     setSyncing(true);
     try {
-      // 1. Cadastra no Asaas usando o nome do responsável/proprietário (e não da loja)
-      const nomeComprador = selectedTenant.proprietario || selectedTenant.nome_proprietario || selectedTenant.nome;
-      const clienteAsaas = await criarClienteAsaas(
-        nomeComprador,
-        selectedTenant.email || `${selectedTenant.slug}@naville.local`,
-        selectedTenant.documento || undefined
-      );
+      // 1. Dispara a sincronização via backend seguro (POST /api/tenants/:id/sync-asaas)
+      // O backend lê process.env.ASAAS_API_KEY no servidor e cadastra o cliente oficial no Asaas
+      const data = await sincronizarTenantNoBackend(selectedTenant.id);
 
-      // 2. Atualiza o PocketBase com o ID retornado
-      const updated = await pb.collection('barbearias').update(selectedTenant.id, {
-        asaas_id: clienteAsaas.id,
-      });
+      const asaasIdGerado = data.asaas_id || data.id;
 
-      // 3. Atualiza os estados locais
-      const tenantAtualizado = { ...selectedTenant, ...updated, asaas_id: clienteAsaas.id };
+      // 2. Atualiza os estados locais imediatamente
+      const tenantAtualizado = { ...selectedTenant, asaas_id: asaasIdGerado };
       setSelectedTenant(tenantAtualizado);
       setBarbearias((prev) => prev.map((b) => (b.id === tenantAtualizado.id ? tenantAtualizado : b)));
-      setSaveFeedback('Sincronizado com Asaas com sucesso!');
-      setTimeout(() => setSaveFeedback(''), 3000);
+      setSaveFeedback('Cliente sincronizado no Asaas Produção com sucesso!');
+      setTimeout(() => setSaveFeedback(''), 3500);
     } catch (error: any) {
-      console.error('Erro ao sincronizar com Asaas:', error);
+      console.error('Erro ao sincronizar com Asaas no backend:', error);
       alert(error.message || 'Falha ao sincronizar cliente no Asaas.');
     } finally {
       setSyncing(false);
@@ -1335,21 +1312,7 @@ export default function SuperAdminLojasView() {
             <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05]">
               <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-2">
                 <h3 className="text-xs font-bold text-white flex items-center gap-2"><CreditCard size={14}/> Faturamento (Asaas)</h3>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAsaasKeyInput(obterAsaasApiKey() || '');
-                      setAsaasMasterWalletInput(obterAsaasMasterWalletId() || '');
-                      setIsConfigAsaasModalOpen(true);
-                    }}
-                    className="text-[9px] bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded font-bold transition-all flex items-center gap-1 cursor-pointer shadow-sm"
-                    title="Configurar Chave de API de Produção do Asaas"
-                  >
-                    <Key size={10} /> Chave Asaas
-                  </button>
-                  <span className="text-[9px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Gateway Oficial</span>
-                </div>
+                <span className="text-[9px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Gateway Oficial</span>
               </div>
               
               {/* Renderização Condicional: Cliente Asaas Existe? */}
@@ -1956,81 +1919,7 @@ export default function SuperAdminLojasView() {
         </div>
       )}
 
-      {/* MODAL: CONFIGURAÇÃO DE CHAVE ASAAS EM TEMPO REAL */}
-      {isConfigAsaasModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200">
-          <div className="relative w-full max-w-md rounded-2xl bg-zinc-950 border border-indigo-500/30 p-6 shadow-2xl flex flex-col gap-4 text-white">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
-                  <Key size={16} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white">Credenciais Asaas de Produção</h3>
-                  <p className="text-[10px] text-zinc-400">Configuração imediata na plataforma</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsConfigAsaasModalOpen(false)}
-                className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
-              >
-                <X size={15} />
-              </button>
-            </div>
 
-            <form onSubmit={handleSalvarChavesAsaas} className="flex flex-col gap-3">
-              <div>
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
-                  Chave de API Asaas (ASAAS_API_KEY)
-                </label>
-                <input
-                  type="password"
-                  value={asaasKeyInput}
-                  onChange={(e) => setAsaasKeyInput(e.target.value)}
-                  placeholder="$aact_YTU5YTE0M2M6..."
-                  className="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 font-mono"
-                />
-                <p className="text-[9px] text-zinc-500 mt-1">
-                  Chave oficial obtida no painel Asaas em Configurações &gt; Integrações &gt; Chaves de API.
-                </p>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
-                  Wallet ID Master (ASAAS_MASTER_WALLET_ID)
-                </label>
-                <input
-                  type="text"
-                  value={asaasMasterWalletInput}
-                  onChange={(e) => setAsaasMasterWalletInput(e.target.value)}
-                  placeholder="wal_000000000000"
-                  className="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 font-mono"
-                />
-                <p className="text-[9px] text-zinc-500 mt-1">
-                  Identificador da sua conta principal para recebimento de taxas de take-rate.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setIsConfigAsaasModalOpen(false)}
-                  className="px-3 py-1.5 rounded-lg border border-white/10 text-xs font-semibold text-zinc-400 hover:text-white transition-colors cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-[0_0_12px_rgba(99,102,241,0.3)] cursor-pointer"
-                >
-                  Salvar Credenciais
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* MODAL / OVERLAY: SPLIT DE PAGAMENTOS & SUBCONTAS ASAAS */}
       {isSplitModalOpen && selectedTenant && (

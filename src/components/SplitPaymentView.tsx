@@ -39,7 +39,13 @@ import {
   Key
 } from 'lucide-react';
 import { pb, Barbearia, Profissional, TerminalPagamento } from '../services/pocketbase';
-import { criarSubcontaAsaas, provisionarSubcontaBarbearia, calcularTaxaNavilleSplit } from '../lib/asaas';
+import {
+  criarSubcontaAsaas,
+  provisionarSubcontaBarbearia,
+  calcularTaxaNavilleSplit,
+  sincronizarSubcontaNoBackend,
+  sincronizarSubcontaProfissionalNoBackend
+} from '../lib/asaas';
 
 interface SplitPaymentViewProps {
   tenant?: Barbearia | any;
@@ -466,12 +472,16 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
         postalCode: (selectedTenant.cep || '13770000').replace(/\D/g, '') || '13770000',
       };
 
-      // 3. Provisionamento da Subconta no Asaas (se não houver wallet_id)
+      // 3. Provisionamento da Subconta no Asaas via Backend Seguro (se não houver wallet_id)
       let walletIdFinal = selectedTenant.asaas_wallet_id;
       let accountIdFinal = selectedTenant.asaas_account_id || selectedTenant.asaas_id;
 
       if (!walletIdFinal) {
-        const subcontaRes = await criarSubcontaAsaas(payloadAsaas);
+        // Dispara criação segura no backend lendo process.env.ASAAS_API_KEY no servidor
+        const subcontaRes = await sincronizarSubcontaNoBackend(selectedTenant.id, {
+          chavePix: chaveLimpa,
+          tipoChave: pixTipoChave,
+        });
         walletIdFinal = subcontaRes.walletId;
         accountIdFinal = subcontaRes.id;
       }
@@ -726,16 +736,19 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
     setSubcontaFeedback(null);
 
     try {
-      // 1. Cria Subconta no Asaas
-      const subcontaRes = await criarSubcontaAsaas({
+      // 1. Cria Subconta no Asaas via rota segura do backend (process.env.ASAAS_API_KEY no servidor)
+      const subcontaRes = await sincronizarSubcontaProfissionalNoBackend(selectedProf.id, {
         name: subNome,
         email: subEmail,
         cpfCnpj: subCpf,
         mobilePhone: subTelefone,
+        pix_chave: subPix,
+        taxa_comissao: Number(subComissao),
       });
 
-      // 2. Atualiza Profissional no PocketBase
-      const patchProf = {
+      // 2. Atualiza Profissional no estado local
+      const profAtualizado = subcontaRes.profissional || {
+        ...selectedProf,
         asaas_account_id: subcontaRes.id,
         asaas_wallet_id: subcontaRes.walletId,
         porcentagem_comissao: Number(subComissao),
@@ -744,8 +757,6 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
         pix_chave: subPix,
         split_status: 'ativo',
       };
-
-      const profAtualizado = await pb.collection('profissionais').update(selectedProf.id, patchProf);
 
       setProfissionais((prev) =>
         prev.map((item) => (item.id === profAtualizado.id ? profAtualizado : item))
@@ -763,10 +774,28 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
       console.error('Erro ao gerar subconta:', err);
       setSubcontaFeedback({
         tipo: 'err',
-        msg: err.message || 'Falha ao comunicar com a API do Asaas.',
+        msg: err.message || 'Falha ao comunicar com a API do Asaas no backend.',
       });
     } finally {
       setGerandoSubconta(false);
+    }
+  };
+
+  const handleResetarSubcontaProfissional = async (prof: Profissional) => {
+    if (!window.confirm(`Deseja resetar a subconta Asaas do barbeiro ${prof.nome}? O vínculo será desfeito para que você possa gerar uma subconta nova na base REAL de Produção.`)) {
+      return;
+    }
+    try {
+      const updated = await pb.collection('profissionais').update(prof.id, {
+        asaas_wallet_id: null,
+        asaas_account_id: null,
+        split_status: 'pendente',
+      });
+      setProfissionais((prev) => prev.map((item) => (item.id === updated.id ? (updated as Profissional) : item)));
+      dispararToast('sucesso', `Subconta do barbeiro ${prof.nome} resetada com sucesso!`, 'Reset Concluído');
+    } catch (err: any) {
+      console.error('Erro ao resetar subconta do profissional:', err);
+      dispararToast('erro', 'Falha ao resetar subconta do barbeiro.', 'Erro');
     }
   };
 
@@ -1926,13 +1955,23 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
                             Gerar Subconta
                           </button>
                         ) : (
-                          <button 
-                            type="button"
-                            onClick={() => handleAbrirModalSubconta(p)}
-                            className="px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white text-[10px] font-semibold transition-colors cursor-pointer border border-white/5"
-                          >
-                            Editar Subconta
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button 
+                              type="button"
+                              onClick={() => handleAbrirModalSubconta(p)}
+                              className="px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white text-[10px] font-semibold transition-colors cursor-pointer border border-white/5"
+                            >
+                              Editar
+                            </button>
+                            <button 
+                              type="button"
+                              onClick={() => handleResetarSubcontaProfissional(p)}
+                              className="p-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-colors cursor-pointer"
+                              title="Resetar subconta para recriar na base REAL de Produção"
+                            >
+                              <RotateCcw size={11} />
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>

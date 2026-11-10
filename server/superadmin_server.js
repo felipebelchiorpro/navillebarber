@@ -258,6 +258,207 @@ app.patch('/api/admin/tenants/:id/toggle-status', requireSuperUser, async (req, 
   }
 });
 
+// ============================================================
+// 4. SINCRONIZAÇÃO SEGURA ASAAS NO BACKEND (SEM EXPOR CHAVE)
+// ============================================================
+app.post('/api/tenants/:id/sync-asaas', async (req, res) => {
+  const { id } = req.params;
+  const asaasKey = process.env.ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY || '';
+  const asaasUrl = process.env.ASAAS_API_URL || 'https://api.asaas.com/v3';
+
+  if (!asaasKey) {
+    return res.status(500).json({
+      error: 'Chave ASAAS_API_KEY não configurada nas variáveis de ambiente do servidor (Coolify).'
+    });
+  }
+
+  try {
+    const tenant = await pb.collection('barbearias').getOne(id);
+    const nomeComprador = tenant.proprietario || tenant.nome_proprietario || tenant.nome;
+    const email = tenant.email_dono || tenant.email || `${tenant.slug}@navillebarber.com`;
+    let doc = (tenant.documento || tenant.cpf_cnpj || tenant.cnpj || '').replace(/\D/g, '');
+
+    const payload = {
+      name: nomeComprador,
+      email: email
+    };
+    if (doc.length === 11 || doc.length === 14) {
+      payload.cpfCnpj = doc;
+    }
+
+    const asaasResponse = await fetch(`${asaasUrl}/customers`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'access_token': asaasKey
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const asaasData = await asaasResponse.json().catch(() => ({}));
+
+    if (!asaasResponse.ok) {
+      const errMsg = asaasData.errors?.[0]?.description || asaasData.message || `Erro no Asaas (${asaasResponse.status})`;
+      return res.status(asaasResponse.status).json({ error: errMsg });
+    }
+
+    const customerId = asaasData.id;
+    await pb.collection('barbearias').update(id, {
+      asaas_id: customerId
+    });
+
+    return res.json({
+      success: true,
+      asaas_id: customerId,
+      customer: asaasData
+    });
+  } catch (err) {
+    console.error('Erro em sync-asaas:', err);
+    return res.status(500).json({ error: err.message || 'Erro interno ao sincronizar com Asaas.' });
+  }
+});
+
+app.post('/api/tenants/:id/sync-subconta', async (req, res) => {
+  const { id } = req.params;
+  const asaasKey = process.env.ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY || '';
+  const asaasUrl = process.env.ASAAS_API_URL || 'https://api.asaas.com/v3';
+
+  if (!asaasKey) {
+    return res.status(500).json({
+      error: 'Chave ASAAS_API_KEY não configurada nas variáveis de ambiente do servidor (Coolify).'
+    });
+  }
+
+  try {
+    const tenant = await pb.collection('barbearias').getOne(id);
+    const chavePix = (req.body?.chavePix || tenant.pix_chave_repasse || '').replace(/\D/g, '');
+    let doc = (tenant.documento || tenant.cpf_cnpj || '').replace(/\D/g, '');
+    if (!doc && (chavePix.length === 11 || chavePix.length === 14)) {
+      doc = chavePix;
+    }
+
+    const payload = {
+      name: tenant.nome,
+      email: tenant.email_dono || tenant.email || `${tenant.slug}@navillebarber.com`,
+      cpfCnpj: doc || chavePix.padEnd(11, '0'),
+      mobilePhone: (tenant.telefone || '11999999999').replace(/\D/g, ''),
+      address: tenant.endereco || 'Rua Principal',
+      addressNumber: tenant.numero || 'S/N',
+      postalCode: (tenant.cep || '13770000').replace(/\D/g, ''),
+      incomeValue: 2500
+    };
+
+    const asaasResponse = await fetch(`${asaasUrl}/accounts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'access_token': asaasKey
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const asaasData = await asaasResponse.json().catch(() => ({}));
+
+    if (!asaasResponse.ok) {
+      const errMsg = asaasData.errors?.[0]?.description || asaasData.message || `Erro no Asaas (${asaasResponse.status})`;
+      return res.status(asaasResponse.status).json({ error: errMsg });
+    }
+
+    const walletId = asaasData.walletId || asaasData.id;
+    const patch = {
+      asaas_wallet_id: walletId,
+      asaas_account_id: asaasData.id
+    };
+    if (req.body?.chavePix) patch.pix_chave_repasse = req.body.chavePix;
+    if (req.body?.tipoChave) patch.pix_tipo_chave = req.body.tipoChave;
+
+    await pb.collection('barbearias').update(id, patch);
+
+    return res.json({
+      success: true,
+      walletId,
+      id: asaasData.id,
+      account: asaasData
+    });
+  } catch (err) {
+    console.error('Erro em sync-subconta:', err);
+    return res.status(500).json({ error: err.message || 'Erro interno ao provisionar subconta no Asaas.' });
+  }
+});
+
+app.post('/api/profissionais/:id/sync-subconta', async (req, res) => {
+  const { id } = req.params;
+  const asaasKey = process.env.ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY || '';
+  const asaasUrl = process.env.ASAAS_API_URL || 'https://api.asaas.com/v3';
+
+  if (!asaasKey) {
+    return res.status(500).json({
+      error: 'Chave ASAAS_API_KEY não configurada nas variáveis de ambiente do servidor (Coolify).'
+    });
+  }
+
+  try {
+    const profissional = await pb.collection('profissionais').getOne(id);
+    const nome = req.body?.name || profissional.nome || 'Profissional Parceiro';
+    const email = req.body?.email || profissional.email || `${id}@navillebarber.com`;
+    let cpfCnpj = (req.body?.cpfCnpj || profissional.cpf_cnpj || req.body?.pix_chave || profissional.pix_chave || '').replace(/\D/g, '');
+    if (cpfCnpj.length < 11) {
+      cpfCnpj = cpfCnpj.padEnd(11, '0');
+    }
+    const mobilePhone = (req.body?.mobilePhone || profissional.telefone || '11999999999').replace(/\D/g, '');
+
+    const payload = {
+      name: nome,
+      email: email,
+      cpfCnpj: cpfCnpj,
+      mobilePhone: mobilePhone,
+      incomeValue: req.body?.incomeValue || 2000
+    };
+
+    const asaasResponse = await fetch(`${asaasUrl}/accounts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'access_token': asaasKey
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const asaasData = await asaasResponse.json().catch(() => ({}));
+
+    if (!asaasResponse.ok) {
+      const errMsg = asaasData.errors?.[0]?.description || asaasData.message || `Erro no Asaas (${asaasResponse.status})`;
+      return res.status(asaasResponse.status).json({ error: errMsg });
+    }
+
+    const walletId = asaasData.walletId || asaasData.id;
+    const patchProf = {
+      asaas_wallet_id: walletId,
+      asaas_account_id: asaasData.id,
+      split_status: 'ativo'
+    };
+    if (req.body?.taxa_comissao !== undefined) {
+      patchProf.porcentagem_comissao = Number(req.body.taxa_comissao);
+      patchProf.taxa_comissao = Number(req.body.taxa_comissao);
+    }
+    if (req.body?.cpfCnpj) patchProf.cpf_cnpj = req.body.cpfCnpj;
+    if (req.body?.pix_chave) patchProf.pix_chave = req.body.pix_chave;
+
+    const profAtualizado = await pb.collection('profissionais').update(id, patchProf);
+
+    return res.json({
+      success: true,
+      walletId,
+      id: asaasData.id,
+      account: asaasData,
+      profissional: profAtualizado
+    });
+  } catch (err) {
+    console.error('Erro em sync-subconta profissional:', err);
+    return res.status(500).json({ error: err.message || 'Erro interno ao provisionar subconta do profissional no Asaas.' });
+  }
+});
+
 // Inicialização do servidor se executado diretamente
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {

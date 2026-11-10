@@ -68,6 +68,16 @@ export default defineConfig(({ mode }) => {
         ],
       },
       proxy: {
+        '/api/tenants': {
+          target: env.VITE_POCKETBASE_URL || 'http://127.0.0.1:8090',
+          changeOrigin: true,
+          secure: false,
+        },
+        '/api/profissionais': {
+          target: env.VITE_POCKETBASE_URL || 'http://127.0.0.1:8090',
+          changeOrigin: true,
+          secure: false,
+        },
         '/api/asaas': {
           target: asaasTarget,
           changeOrigin: true,

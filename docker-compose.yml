@@ -20,10 +20,15 @@ services:
 
   pocketbase:
     image: ghcr.io/muchobien/pocketbase:latest
-    command: ["serve", "--http=0.0.0.0:8090", "--dir=/pb/pb_data"]
+    command: ["serve", "--http=0.0.0.0:8090", "--dir=/pb/pb_data", "--hooksDir=/pb/pb_hooks"]
     expose:
       - "8090"
+    environment:
+      - ASAAS_API_KEY=${ASAAS_API_KEY:-}
+      - ASAAS_API_URL=${ASAAS_API_URL:-https://api.asaas.com/v3}
+      - ASAAS_MASTER_WALLET_ID=${ASAAS_MASTER_WALLET_ID:-}
     volumes:
       - ./pocketbase/pb_data:/pb/pb_data
       - ./pocketbase/pb_migrations:/pb/pb_migrations:ro
+      - ./pocketbase/pb_hooks:/pb/pb_hooks:ro
     restart: unless-stopped

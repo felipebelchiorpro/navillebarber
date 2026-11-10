@@ -45,78 +45,97 @@ export interface AssinaturaAsaas {
   [key: string]: any;
 }
 
-// 1. RESOLUÇÃO DE CREDENCIAIS DE PRODUÇÃO DO ASAAS
-export function obterAsaasApiKey(): string {
-  // 1. Chave configurada manualmente via interface (localStorage)
-  if (typeof window !== 'undefined') {
-    const override = localStorage.getItem('asaas_api_key_override') || localStorage.getItem('asaas_api_key');
-    if (override && override.trim()) return override.trim();
-  }
-
-  // 2. Chave de variável de ambiente (injetada no build do Vite/Docker)
-  const envKey =
-    (typeof process !== 'undefined' && process.env?.ASAAS_API_KEY) ||
-    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_API_KEY) ||
-    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_API_KEY_PRODUCTION) ||
-    (typeof process !== 'undefined' && process.env?.VITE_ASAAS_API_KEY) ||
-    '';
-
-  return envKey.trim();
-}
-
-export function obterAsaasMasterWalletId(): string {
-  if (typeof window !== 'undefined') {
-    const override = localStorage.getItem('asaas_master_wallet_override') || localStorage.getItem('asaas_master_wallet_id');
-    if (override && override.trim()) return override.trim();
-  }
-
-  const envMaster =
-    (typeof process !== 'undefined' && process.env?.ASAAS_MASTER_WALLET_ID) ||
-    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_MASTER_WALLET_ID) ||
-    '';
-
-  return envMaster.trim();
-}
-
-export function salvarCredenciaisAsaasEmMemoria(apiKey: string, masterWalletId?: string) {
-  if (typeof window !== 'undefined') {
-    if (apiKey) localStorage.setItem('asaas_api_key_override', apiKey.trim());
-    if (masterWalletId) localStorage.setItem('asaas_master_wallet_override', masterWalletId.trim());
-  }
-}
-
+// 1. CREDENCIAIS E ROTAS DO GATEWAY ASAAS
 export const ASAAS_URL =
   (typeof process !== 'undefined' && process.env?.ASAAS_API_URL) ||
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_API_URL) ||
   'https://api.asaas.com/v3';
 
-export const ASAAS_KEY = obterAsaasApiKey();
-export const MASTER_WALLET_ID = obterAsaasMasterWalletId();
+export const ASAAS_KEY =
+  (typeof process !== 'undefined' && process.env?.ASAAS_API_KEY) ||
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_API_KEY) ||
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_API_KEY_PRODUCTION) ||
+  '';
+
+export const MASTER_WALLET_ID =
+  (typeof process !== 'undefined' && process.env?.ASAAS_MASTER_WALLET_ID) ||
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ASAAS_MASTER_WALLET_ID) ||
+  '';
 
 function getAsaasConfig() {
-  let apiKey = obterAsaasApiKey();
-
-  // Se não encontrada e estiver no browser, tenta solicitar interativamente
-  if (!apiKey && typeof window !== 'undefined') {
-    const entrada = window.prompt(
-      'Configuração Asaas Produção:\n\nCole a sua Chave de API Oficial do Asaas ($aact_...):'
-    );
-    if (entrada && entrada.trim()) {
-      apiKey = entrada.trim();
-      salvarCredenciaisAsaasEmMemoria(apiKey);
-    }
-  }
+  const apiKey = ASAAS_KEY;
 
   if (!apiKey) {
-    throw new Error('Chave de API do Asaas (ASAAS_API_KEY) não configurada. Configure a chave no botão "Chave Asaas" do SuperAdmin ou no .env do servidor.');
+    throw new Error('Chave de API do Asaas não configurada no servidor. As operações devem ser realizadas via rotas do backend.');
   }
 
-  // Em ambiente de desenvolvimento local Vite, usa o proxy configurado (/api/asaas) para contornar CORS
   const baseUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV)
     ? '/api/asaas'
     : ASAAS_URL;
 
   return { apiKey, baseUrl, isProd: true };
+}
+
+/**
+ * Dispara a sincronização/cadastro do tenant diretamente pelo backend seguro (sem expor credenciais no cliente)
+ */
+export async function sincronizarTenantNoBackend(tenantId: string) {
+  const response = await fetch(`/api/tenants/${tenantId}/sync-asaas`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data.error || data.message || `Erro ao sincronizar com Asaas (${response.status})`);
+  }
+
+  return data;
+}
+
+/**
+ * Dispara a criação/provisionamento da subconta de Split da barbearia diretamente pelo backend seguro
+ */
+export async function sincronizarSubcontaNoBackend(tenantId: string, dados?: { chavePix?: string; tipoChave?: string }) {
+  const response = await fetch(`/api/tenants/${tenantId}/sync-subconta`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(dados || {}),
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data.error || data.message || `Erro ao provisionar subconta no Asaas (${response.status})`);
+  }
+
+  return data;
+}
+
+/**
+ * Dispara a criação/provisionamento da subconta de Split do barbeiro/profissional diretamente pelo backend seguro
+ */
+export async function sincronizarSubcontaProfissionalNoBackend(profissionalId: string, dados?: any) {
+  const response = await fetch(`/api/profissionais/${profissionalId}/sync-subconta`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(dados || {}),
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data.error || data.message || `Erro ao provisionar subconta do barbeiro no Asaas (${response.status})`);
+  }
+
+  return data;
 }
 
 /**
