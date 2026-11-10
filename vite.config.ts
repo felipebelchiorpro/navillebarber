@@ -79,7 +79,12 @@ export default defineConfig(({ mode }) => {
           secure: false,
         },
         '/api/asaas/sync-tenant': {
-          target: env.VITE_BACKEND_URL || env.VITE_POCKETBASE_URL || 'http://127.0.0.1:8090',
+          target: env.VITE_BACKEND_URL || 'http://127.0.0.1:3001',
+          changeOrigin: true,
+          secure: false,
+        },
+        '/api/admin': {
+          target: env.VITE_BACKEND_URL || 'http://127.0.0.1:3001',
           changeOrigin: true,
           secure: false,
         },

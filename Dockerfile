@@ -31,9 +31,22 @@ RUN npm run build
 
 FROM nginx:alpine
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Instala Node.js para executar o backend Express
+RUN apk add --no-cache nodejs npm
+
+WORKDIR /app
+
+# Instala apenas dependências de produção para o backend
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY server/ ./server/
 COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+COPY start.sh /start.sh
+RUN tr -d '\r' < /start.sh > /start.sh.tmp && mv /start.sh.tmp /start.sh && chmod +x /start.sh
 
 EXPOSE 80
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/start.sh"]

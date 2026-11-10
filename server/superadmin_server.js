@@ -306,11 +306,11 @@ app.post('/api/asaas/sync-tenant', async (req, res) => {
     }
 
     // Se NÃO possui ID prévio gravado, NUNCA tenta GET: cria diretamente via POST /customers
-    const endpoint = asaasIdAtual
+    let endpoint = asaasIdAtual
       ? `${asaasUrl}/customers/${encodeURIComponent(asaasIdAtual)}`
       : `${asaasUrl}/customers`;
 
-    const asaasResponse = await fetch(endpoint, {
+    let asaasResponse = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -319,7 +319,22 @@ app.post('/api/asaas/sync-tenant', async (req, res) => {
       body: JSON.stringify(payload)
     });
 
-    const asaasData = await asaasResponse.json().catch(() => ({}));
+    let asaasData = await asaasResponse.json().catch(() => ({}));
+
+    // Se retornou 404 ao tentar atualizar ID existente (ex: ID de outro ambiente), cria novo cliente
+    if (!asaasResponse.ok && asaasResponse.status === 404 && asaasIdAtual) {
+      console.warn(`[SYNC] ID ${asaasIdAtual} retornou 404 no Asaas (${asaasUrl}). Criando novo cliente...`);
+      endpoint = `${asaasUrl}/customers`;
+      asaasResponse = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'access_token': asaasKey
+        },
+        body: JSON.stringify(payload)
+      });
+      asaasData = await asaasResponse.json().catch(() => ({}));
+    }
 
     if (!asaasResponse.ok) {
       const errMsg = asaasData.errors?.[0]?.description || asaasData.message || `Erro no Asaas (${asaasResponse.status})`;
@@ -487,11 +502,11 @@ app.post('/api/tenants/:id/sync-asaas', async (req, res) => {
     }
 
     // Se NÃO possui ID prévio gravado, NUNCA tenta GET: cria diretamente via POST /customers
-    const endpoint = asaasIdAtual
+    let endpoint = asaasIdAtual
       ? `${asaasUrl}/customers/${encodeURIComponent(asaasIdAtual)}`
       : `${asaasUrl}/customers`;
 
-    const asaasResponse = await fetch(endpoint, {
+    let asaasResponse = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -500,7 +515,22 @@ app.post('/api/tenants/:id/sync-asaas', async (req, res) => {
       body: JSON.stringify(payload)
     });
 
-    const asaasData = await asaasResponse.json().catch(() => ({}));
+    let asaasData = await asaasResponse.json().catch(() => ({}));
+
+    // Se retornou 404 ao tentar atualizar ID existente (ex: ID de outro ambiente), cria novo cliente
+    if (!asaasResponse.ok && asaasResponse.status === 404 && asaasIdAtual) {
+      console.warn(`[SYNC] ID ${asaasIdAtual} retornou 404 no Asaas (${asaasUrl}). Criando novo cliente...`);
+      endpoint = `${asaasUrl}/customers`;
+      asaasResponse = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'access_token': asaasKey
+        },
+        body: JSON.stringify(payload)
+      });
+      asaasData = await asaasResponse.json().catch(() => ({}));
+    }
 
     if (!asaasResponse.ok) {
       const errMsg = asaasData.errors?.[0]?.description || asaasData.message || `Erro no Asaas (${asaasResponse.status})`;
