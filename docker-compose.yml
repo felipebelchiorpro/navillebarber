@@ -1,28 +1,28 @@
+version: "3.8"
+
 services:
   web:
     build:
       context: .
       args:
         VITE_POCKETBASE_URL: ${VITE_POCKETBASE_URL:-}
-        ASAAS_API_KEY: ${ASAAS_API_KEY:-}
-        ASAAS_API_URL: ${ASAAS_API_URL:-}
-        ASAAS_MASTER_WALLET_ID: ${ASAAS_MASTER_WALLET_ID:-}
-        VITE_ASAAS_API_KEY: ${VITE_ASAAS_API_KEY:-}
-        VITE_ASAAS_API_KEY_PRODUCTION: ${VITE_ASAAS_API_KEY_PRODUCTION:-}
-        VITE_ASAAS_API_URL: ${VITE_ASAAS_API_URL:-}
-        VITE_ASAAS_MASTER_WALLET_ID: ${VITE_ASAAS_MASTER_WALLET_ID:-}
-        VITE_ASAAS_ENV: ${VITE_ASAAS_ENV:-}
+        VITE_ASAAS_API_URL: ${ASAAS_API_URL:-https://api.asaas.com/v3}
+        VITE_ASAAS_ENV: ${VITE_ASAAS_ENV:-production}
     expose:
-      - "80"
+      - "3001"
     environment:
-      - ASAAS_API_KEY=${ASAAS_API_KEY:-}
-      - ASAAS_API_URL=${ASAAS_API_URL:-https://api.asaas.com/v3}
-      - ASAAS_MASTER_WALLET_ID=${ASAAS_MASTER_WALLET_ID:-}
-      - POCKETBASE_URL=http://pocketbase:8090
       - PORT=3001
+      - NODE_ENV=production
+      - ASAAS_API_KEY=${ASAAS_API_KEY}
+      - ASAAS_API_URL=${ASAAS_API_URL:-https://api.asaas.com/v3}
+      - ASAAS_MASTER_WALLET_ID=${ASAAS_MASTER_WALLET_ID}
+      - ASAAS_WEBHOOK_SECRET=${ASAAS_WEBHOOK_SECRET}
+      - POCKETBASE_URL=http://pocketbase:8090
     depends_on:
       - pocketbase
     restart: unless-stopped
+    networks:
+      - naville-network
 
   pocketbase:
     image: ghcr.io/muchobien/pocketbase:latest
@@ -30,11 +30,18 @@ services:
     expose:
       - "8090"
     environment:
-      - ASAAS_API_KEY=${ASAAS_API_KEY:-}
+      - ASAAS_API_KEY=${ASAAS_API_KEY}
       - ASAAS_API_URL=${ASAAS_API_URL:-https://api.asaas.com/v3}
-      - ASAAS_MASTER_WALLET_ID=${ASAAS_MASTER_WALLET_ID:-}
+      - ASAAS_MASTER_WALLET_ID=${ASAAS_MASTER_WALLET_ID}
+      - ASAAS_WEBHOOK_SECRET=${ASAAS_WEBHOOK_SECRET}
     volumes:
       - ./pocketbase/pb_data:/pb/pb_data
       - ./pocketbase/pb_migrations:/pb/pb_migrations:ro
       - ./pocketbase/pb_hooks:/pb/pb_hooks:ro
     restart: unless-stopped
+    networks:
+      - naville-network
+
+networks:
+  naville-network:
+    driver: bridge

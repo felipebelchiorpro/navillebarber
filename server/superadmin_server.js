@@ -2,10 +2,22 @@ import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import PocketBase from 'pocketbase';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distPath = path.resolve(__dirname, '../dist');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Servir arquivos estáticos do frontend (quando compilado)
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+}
 
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'superadmin-secret-jwt-key-naville-2026';
@@ -692,6 +704,54 @@ app.post('/api/profissionais/:id/sync-subconta', async (req, res) => {
     console.error('Erro em sync-subconta profissional:', err);
     return res.status(500).json({ error: err.message || 'Erro interno ao provisionar subconta do profissional no Asaas.' });
   }
+});
+
+// ============================================================
+// 5. PROXY POCKETBASE & SPA FALLBACK
+// ============================================================
+app.use(['/api/collections', '/api/files', '/api/health', '/api/settings', '/api/batch', '/_'], async (req, res) => {
+  const targetUrl = `${PB_URL}${req.originalUrl}`;
+  try {
+    const headers = { ...req.headers };
+    delete headers.host;
+
+    const options = {
+      method: req.method,
+      headers: headers,
+    };
+
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
+      if (Buffer.isBuffer(req.body)) {
+        options.body = req.body;
+      } else if (typeof req.body === 'object') {
+        options.body = JSON.stringify(req.body);
+        headers['content-type'] = 'application/json';
+      }
+    }
+
+    const pbRes = await fetch(targetUrl, options);
+    res.status(pbRes.status);
+    pbRes.headers.forEach((val, key) => {
+      if (key !== 'content-encoding') res.setHeader(key, val);
+    });
+    const buffer = await pbRes.arrayBuffer();
+    return res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error(`Erro ao fazer proxy para PocketBase (${targetUrl}):`, err.message);
+    return res.status(502).json({ error: 'PocketBase indisponível.' });
+  }
+});
+
+// SPA fallback para React Router (Express 5 compatível)
+app.use((req, res) => {
+  if (req.path.startsWith('/api/') || req.path.startsWith('/_/')) {
+    return res.status(404).json({ error: 'Endpoint não encontrado.' });
+  }
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
+  return res.status(200).send('Naville Barber API Server online.');
 });
 
 // Inicialização do servidor se executado diretamente
