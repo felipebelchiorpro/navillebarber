@@ -101,6 +101,23 @@ export default function SuperAdminLojasView() {
   const [docCompradorInput, setDocCompradorInput] = useState('');
   const [savingComprador, setSavingComprador] = useState(false);
 
+  // Estados para Edição Completa da Barbearia (Tenant)
+  const [isEditBarbeariaOpen, setIsEditBarbeariaOpen] = useState(false);
+  const [editNome, setEditNome] = useState('');
+  const [editSlug, setEditSlug] = useState('');
+  const [editPlano, setEditPlano] = useState('pro');
+  const [editProprietario, setEditProprietario] = useState('');
+  const [editTelefone, setEditTelefone] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editDocumento, setEditDocumento] = useState('');
+  const [editCep, setEditCep] = useState('');
+  const [editEndereco, setEditEndereco] = useState('');
+  const [editNumero, setEditNumero] = useState('');
+  const [editBairro, setEditBairro] = useState('');
+  const [editCidade, setEditCidade] = useState('');
+  const [editEstado, setEditEstado] = useState('');
+  const [savingBarbearia, setSavingBarbearia] = useState(false);
+
   // Estados para Edição de Vencimento de Cobrança Pendente
   const [editandoCobrancaId, setEditandoCobrancaId] = useState<string | null>(null);
   const [novoVencimentoInput, setNovoVencimentoInput] = useState('');
@@ -380,6 +397,98 @@ export default function SuperAdminLojasView() {
       dispararToast('erro', err.message || 'Falha ao atualizar dados do comprador.', 'Erro no Asaas');
     } finally {
       setSavingComprador(false);
+    }
+  };
+
+  const handleAbrirEditarBarbearia = (tenant?: any) => {
+    const target = tenant || selectedTenant;
+    if (!target) return;
+    setEditNome(target.nome || '');
+    setEditSlug(target.slug || '');
+    setEditPlano(target.plano_saas || target.plano || 'pro');
+    setEditProprietario(target.nome_proprietario || target.proprietario || '');
+    setEditTelefone(target.telefone_proprietario || target.telefone || target.whatsapp || '');
+    setEditEmail(target.email_dono || target.email || '');
+    setEditDocumento(target.documento || target.cpf_cnpj || target.cnpj || '');
+    setEditCep(target.cep || '');
+    setEditEndereco(target.endereco || '');
+    setEditNumero(target.numero || '');
+    setEditBairro(target.bairro || '');
+    setEditCidade(target.cidade || '');
+    setEditEstado(target.estado || '');
+    setIsEditBarbeariaOpen(true);
+  };
+
+  const handleSalvarBarbearia = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedTenant) return;
+    if (!editNome.trim()) {
+      dispararToast('aviso', 'O nome da barbearia é obrigatório.', 'Atenção');
+      return;
+    }
+    const cleanSlug = editSlug
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9-]/g, '-')
+      .replace(/--+/g, '-')
+      .replace(/^-|-$/g, '');
+
+    if (!cleanSlug) {
+      dispararToast('aviso', 'O slug da barbearia é obrigatório.', 'Atenção');
+      return;
+    }
+
+    setSavingBarbearia(true);
+    try {
+      const patch = {
+        nome: editNome.trim(),
+        slug: cleanSlug,
+        plano: editPlano.toLowerCase(),
+        plano_saas: editPlano.toLowerCase(),
+        proprietario: editProprietario.trim(),
+        nome_proprietario: editProprietario.trim() || editNome.trim(),
+        telefone: editTelefone.trim(),
+        telefone_proprietario: editTelefone.trim(),
+        whatsapp: editTelefone.trim(),
+        email: editEmail.trim(),
+        email_dono: editEmail.trim(),
+        documento: editDocumento.trim(),
+        cpf_cnpj: editDocumento.trim(),
+        cep: editCep.trim(),
+        endereco: editEndereco.trim(),
+        numero: editNumero.trim(),
+        bairro: editBairro.trim(),
+        cidade: editCidade.trim(),
+        estado: editEstado.trim().toUpperCase(),
+      };
+
+      const updated = await pb.collection('barbearias').update(selectedTenant.id, patch);
+      const tenantAtualizado = { ...selectedTenant, ...updated };
+      setSelectedTenant(tenantAtualizado);
+      setBarbearias((prev) => prev.map((b) => (b.id === tenantAtualizado.id ? tenantAtualizado : b)));
+
+      // Sincroniza com Asaas caso já tenha vínculo
+      if (selectedTenant.asaas_id) {
+        fetch('/api/asaas/sync-tenant', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenantId: selectedTenant.id }),
+        }).catch((err) => console.warn('Aviso ao sincronizar no Asaas:', err));
+      }
+
+      dispararToast('sucesso', 'Dados da barbearia atualizados com sucesso!', 'Salvo com Sucesso');
+      setSaveFeedback('Dados da barbearia atualizados!');
+      setTimeout(() => setSaveFeedback(''), 3000);
+      setIsEditBarbeariaOpen(false);
+    } catch (err: any) {
+      console.error('Erro ao atualizar barbearia:', err);
+      const msg = err?.data?.message || err?.message || 'Falha ao salvar dados da barbearia.';
+      dispararToast('erro', msg, 'Erro no PocketBase');
+      alert(`Erro ao salvar barbearia: ${msg}`);
+    } finally {
+      setSavingBarbearia(false);
     }
   };
 
@@ -693,25 +802,39 @@ export default function SuperAdminLojasView() {
                 <div
                   key={b.id}
                   onClick={() => handleSelectTenant(b)}
-                  className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-colors ${
+                  className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-colors group ${
                     selectedTenant?.id === b.id
                       ? 'bg-white/[0.05] border-emerald-500/30'
                       : 'border-transparent hover:bg-white/[0.02]'
                   }`}
                 >
-                  <div>
-                    <p className="text-[11px] font-bold text-white">{b.nome || 'Sem Nome'}</p>
-                    <p className="text-[9px] text-zinc-500">/b/{b.slug}</p>
+                  <div className="min-w-0 pr-2">
+                    <p className="text-[11px] font-bold text-white truncate">{b.nome || 'Sem Nome'}</p>
+                    <p className="text-[9px] text-zinc-500 truncate">/b/{b.slug}</p>
                   </div>
-                  <span
-                    className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold border ${
-                      b.status === 'ativa' || b.status === 'ativo'
-                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                        : 'bg-red-500/10 text-red-400 border-red-500/20'
-                    }`}
-                  >
-                    {b.status || 'Pendente'}
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectTenant(b);
+                        handleAbrirEditarBarbearia(b);
+                      }}
+                      className="p-1 rounded hover:bg-white/10 text-zinc-400 hover:text-white transition-colors"
+                      title="Editar dados desta barbearia"
+                    >
+                      <Edit3 size={11} />
+                    </button>
+                    <span
+                      className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold border ${
+                        b.status === 'ativa' || b.status === 'ativo'
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          : 'bg-red-500/10 text-red-400 border-red-500/20'
+                      }`}
+                    >
+                      {b.status || 'Pendente'}
+                    </span>
+                  </div>
                 </div>
               ))
             )}
@@ -732,12 +855,22 @@ export default function SuperAdminLojasView() {
                 </div>
                 <p className="text-[10px] text-zinc-400 mt-1">
                   ID: <span className="font-mono text-zinc-300">{selectedTenant.id}</span> • Slug: <span className="text-emerald-400">/b/{selectedTenant.slug}</span>
-                  {selectedTenant.proprietario && ` • Dono: ${selectedTenant.proprietario}`}
-                  {selectedTenant.telefone && ` • Tel: ${selectedTenant.telefone}`}
+                  {(selectedTenant.proprietario || selectedTenant.nome_proprietario) && ` • Dono: ${selectedTenant.proprietario || selectedTenant.nome_proprietario}`}
+                  {(selectedTenant.telefone || selectedTenant.telefone_proprietario) && ` • Tel: ${selectedTenant.telefone || selectedTenant.telefone_proprietario}`}
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleAbrirEditarBarbearia()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition-all cursor-pointer"
+                  title="Editar dados da barbearia (Nome, Dono, Slug, Telefone, Endereço, Documento)"
+                >
+                  <Edit3 size={13} />
+                  <span>Editar Barbearia</span>
+                </button>
+
                 <a
                   href={`/b/${selectedTenant.slug}`}
                   target="_blank"
@@ -1915,6 +2048,239 @@ export default function SuperAdminLojasView() {
                 })
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EDITAR DADOS COMPLETOS DA BARBEARIA */}
+      {isEditBarbeariaOpen && selectedTenant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 animate-in fade-in duration-200 overflow-y-auto">
+          <div className="relative w-full max-w-2xl rounded-2xl bg-zinc-950 border border-white/10 p-6 shadow-2xl flex flex-col gap-4 text-white max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                  <Edit3 size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Editar Dados da Barbearia</h3>
+                  <p className="text-[11px] text-zinc-400">
+                    Altere nome comercial, URL/slug, proprietário, contatos, plano e endereço
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditBarbeariaOpen(false)}
+                className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSalvarBarbearia} className="flex flex-col gap-4">
+              {/* SEÇÃO 1: IDENTIFICAÇÃO DA LOJA */}
+              <div>
+                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block mb-2">
+                  1. Identificação da Loja
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-zinc-300">Nome da Barbearia *</label>
+                    <input
+                      type="text"
+                      required
+                      value={editNome}
+                      onChange={(e) => setEditNome(e.target.value)}
+                      placeholder="Ex: Barbearia Vip"
+                      className="bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-zinc-300">Slug / Link Público *</label>
+                    <div className="flex items-center bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 focus-within:border-indigo-500 transition-colors">
+                      <span className="text-zinc-500 text-xs font-mono select-none">/b/</span>
+                      <input
+                        type="text"
+                        required
+                        value={editSlug}
+                        onChange={(e) => setEditSlug(e.target.value)}
+                        placeholder="barbearia-vip"
+                        className="bg-transparent text-xs text-emerald-400 outline-none w-full font-mono ml-0.5"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-zinc-300">Plano SaaS</label>
+                    <select
+                      value={editPlano}
+                      onChange={(e) => setEditPlano(e.target.value)}
+                      className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
+                    >
+                      <option value="starter">Starter (Até 2 Cadeiras)</option>
+                      <option value="pro">Pro (Até 5 Cadeiras)</option>
+                      <option value="elite">Elite (Ilimitado / Custom)</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-zinc-300">ID no Sistema</label>
+                    <input
+                      type="text"
+                      readOnly
+                      disabled
+                      value={selectedTenant.id}
+                      className="bg-white/[0.02] border border-white/5 rounded-lg px-3 py-2 text-xs text-zinc-500 font-mono cursor-not-allowed select-all"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* SEÇÃO 2: DADOS DO PROPRIETÁRIO / CONTATO */}
+              <div className="border-t border-white/5 pt-3">
+                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block mb-2">
+                  2. Proprietário & Contato
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-zinc-300">Nome do Dono / Titular</label>
+                    <input
+                      type="text"
+                      value={editProprietario}
+                      onChange={(e) => setEditProprietario(e.target.value)}
+                      placeholder="Ex: Carlos Silva"
+                      className="bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-zinc-300">Telefone / WhatsApp</label>
+                    <input
+                      type="text"
+                      value={editTelefone}
+                      onChange={(e) => setEditTelefone(e.target.value)}
+                      placeholder="Ex: 19999998888"
+                      className="bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-zinc-300">E-mail do Proprietário</label>
+                    <input
+                      type="email"
+                      value={editEmail}
+                      onChange={(e) => setEditEmail(e.target.value)}
+                      placeholder="dono@exemplo.com"
+                      className="bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-zinc-300">CPF ou CNPJ</label>
+                    <input
+                      type="text"
+                      value={editDocumento}
+                      onChange={(e) => setEditDocumento(e.target.value)}
+                      placeholder="Apenas números ou formatado"
+                      className="bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 transition-colors font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* SEÇÃO 3: ENDEREÇO DA BARBEARIA */}
+              <div className="border-t border-white/5 pt-3">
+                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block mb-2">
+                  3. Endereço Comercial
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-zinc-300">CEP</label>
+                    <input
+                      type="text"
+                      value={editCep}
+                      onChange={(e) => setEditCep(e.target.value)}
+                      placeholder="13770-000"
+                      className="bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 transition-colors font-mono"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2 flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-zinc-300">Rua / Logradouro</label>
+                    <input
+                      type="text"
+                      value={editEndereco}
+                      onChange={(e) => setEditEndereco(e.target.value)}
+                      placeholder="Ex: Rua das Flores"
+                      className="bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-zinc-300">Número</label>
+                    <input
+                      type="text"
+                      value={editNumero}
+                      onChange={(e) => setEditNumero(e.target.value)}
+                      placeholder="123 ou S/N"
+                      className="bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-zinc-300">Bairro</label>
+                    <input
+                      type="text"
+                      value={editBairro}
+                      onChange={(e) => setEditBairro(e.target.value)}
+                      placeholder="Centro"
+                      className="bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-zinc-300">Cidade / UF</label>
+                    <div className="grid grid-cols-3 gap-1">
+                      <input
+                        type="text"
+                        value={editCidade}
+                        onChange={(e) => setEditCidade(e.target.value)}
+                        placeholder="Cidade"
+                        className="col-span-2 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-2 text-xs text-white outline-none focus:border-indigo-500 transition-colors"
+                      />
+                      <input
+                        type="text"
+                        maxLength={2}
+                        value={editEstado}
+                        onChange={(e) => setEditEstado(e.target.value.toUpperCase())}
+                        placeholder="SP"
+                        className="bg-white/[0.03] border border-white/10 rounded-lg px-2 py-2 text-xs text-white outline-none focus:border-indigo-500 transition-colors text-center uppercase"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* BOTÕES DE AÇÃO */}
+              <div className="border-t border-white/5 pt-3 flex justify-end items-center gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditBarbeariaOpen(false)}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingBarbearia}
+                  className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {savingBarbearia ? <RefreshCw size={12} className="animate-spin" /> : <Save size={12} />}
+                  <span>{savingBarbearia ? 'Salvando Alterações...' : 'Salvar Alterações'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
