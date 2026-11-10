@@ -475,6 +475,16 @@ export async function criarSubcontaAsaas(
     incomeValue: dados.incomeValue || 2500,
   };
 
+  if (dados.company || dados.nome_barbearia) {
+    payload.company = dados.company || dados.nome_barbearia;
+  }
+
+  if (docLimpo.length === 11) {
+    payload.birthDate = dados.birthDate || dados.data_nascimento || '1990-01-01';
+  } else if (docLimpo.length === 14) {
+    payload.companyType = dados.companyType || 'MEI';
+  }
+
   if (dados.province) payload.province = dados.province;
 
   const response = await fetch(`${baseUrl}/accounts`, {

@@ -309,19 +309,22 @@ app.post('/api/asaas/sync-tenant', async (req, res) => {
     }
 
     const asaasIdAtual = tenant.asaas_id || tenant.asaas_customer_id || '';
+    const nomeBarbearia = tenant.nome || 'Barbearia';
     const nomeComprador = tenant.proprietario || tenant.nome_proprietario || tenant.nome || 'Cliente Naville';
     const email = tenant.email_dono || tenant.email || `${tenant.slug || 'barbearia'}@navillebarber.com`;
     let doc = (tenant.documento || tenant.cpf_cnpj || tenant.cnpj || '').replace(/\D/g, '');
 
     const payload = {
-      name: nomeComprador,
-      email: email
+      name: `${nomeComprador} (${nomeBarbearia})`,
+      company: nomeBarbearia, // Preenche a coluna EMPRESA no painel do Asaas!
+      email: email,
+      externalReference: tenant.id
     };
     if (doc.length === 11 || doc.length === 14) {
       payload.cpfCnpj = doc;
     }
-    if (tenant.telefone) {
-      payload.mobilePhone = tenant.telefone.replace(/\D/g, '');
+    if (tenant.telefone || tenant.telefone_proprietario) {
+      payload.mobilePhone = (tenant.telefone_proprietario || tenant.telefone).replace(/\D/g, '');
     }
 
     // Se NÃO possui ID prévio gravado, NUNCA tenta GET: cria diretamente via POST /customers
@@ -585,21 +588,34 @@ app.post('/api/tenants/:id/sync-subconta', async (req, res) => {
   try {
     const tenant = await pb.collection('barbearias').getOne(id);
     const chavePix = (req.body?.chavePix || tenant.pix_chave_repasse || '').replace(/\D/g, '');
-    let doc = (tenant.documento || tenant.cpf_cnpj || '').replace(/\D/g, '');
+    let doc = (req.body?.cpfCnpj || tenant.documento || tenant.cpf_cnpj || tenant.cnpj || '').replace(/\D/g, '');
     if (!doc && (chavePix.length === 11 || chavePix.length === 14)) {
       doc = chavePix;
     }
 
+    if (!doc || (doc.length !== 11 && doc.length !== 14)) {
+      return res.status(400).json({
+        error: 'É necessário cadastrar um CPF (11 dígitos) ou CNPJ (14 dígitos) válido para criar a subconta da barbearia no Asaas. Use o botão "Editar Barbearia" no topo para preencher.'
+      });
+    }
+
     const payload = {
-      name: tenant.nome,
+      name: tenant.nome_proprietario || tenant.proprietario || tenant.nome,
+      company: tenant.nome,
       email: tenant.email_dono || tenant.email || `${tenant.slug}@navillebarber.com`,
-      cpfCnpj: doc || chavePix.padEnd(11, '0'),
-      mobilePhone: (tenant.telefone || '11999999999').replace(/\D/g, ''),
+      cpfCnpj: doc,
+      mobilePhone: (tenant.telefone_proprietario || tenant.telefone || '11999999999').replace(/\D/g, ''),
       address: tenant.endereco || 'Rua Principal',
       addressNumber: tenant.numero || 'S/N',
       postalCode: (tenant.cep || '13770000').replace(/\D/g, ''),
       incomeValue: 2500
     };
+
+    if (doc.length === 11) {
+      payload.birthDate = req.body?.birthDate || tenant.data_nascimento || '1990-01-01';
+    } else {
+      payload.companyType = tenant.company_type || req.body?.companyType || 'MEI';
+    }
 
     const asaasResponse = await fetch(`${asaasUrl}/accounts`, {
       method: 'POST',
@@ -654,8 +670,8 @@ app.post('/api/profissionais/:id/sync-subconta', async (req, res) => {
     const nome = req.body?.name || profissional.nome || 'Profissional Parceiro';
     const email = req.body?.email || profissional.email || `${id}@navillebarber.com`;
     let cpfCnpj = (req.body?.cpfCnpj || profissional.cpf_cnpj || req.body?.pix_chave || profissional.pix_chave || '').replace(/\D/g, '');
-    if (cpfCnpj.length < 11) {
-      cpfCnpj = cpfCnpj.padEnd(11, '0');
+    if (cpfCnpj.length !== 11 && cpfCnpj.length !== 14) {
+      return res.status(400).json({ error: 'O profissional precisa ter um CPF (11 dígitos) ou CNPJ válido para receber o rateio via subconta Asaas.' });
     }
     const mobilePhone = (req.body?.mobilePhone || profissional.telefone || '11999999999').replace(/\D/g, '');
 
@@ -666,6 +682,12 @@ app.post('/api/profissionais/:id/sync-subconta', async (req, res) => {
       mobilePhone: mobilePhone,
       incomeValue: req.body?.incomeValue || 2000
     };
+
+    if (cpfCnpj.length === 11) {
+      payload.birthDate = req.body?.birthDate || profissional.data_nascimento || '1990-01-01';
+    } else {
+      payload.companyType = 'MEI';
+    }
 
     const asaasResponse = await fetch(`${asaasUrl}/accounts`, {
       method: 'POST',

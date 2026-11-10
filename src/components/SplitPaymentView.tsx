@@ -472,25 +472,39 @@ export default function SplitPaymentView({
         ''
       ).replace(/\D/g, '');
 
-      // Prioriza documento cadastrado ou a chave Pix limpa
+      // Prioriza documento cadastrado ou a chave Pix limpa (se for CPF/CNPJ)
       const cpfCnpjFinal =
         docCadastrado ||
         (chavePixNumeros.length === 11 || chavePixNumeros.length === 14
           ? chavePixNumeros
-          : chavePixNumeros.padEnd(11, '0'));
+          : '');
 
-      const payloadAsaas = {
-        name: selectedTenant.nome || 'Barbearia Parceira',
+      if (!cpfCnpjFinal || (cpfCnpjFinal.length !== 11 && cpfCnpjFinal.length !== 14)) {
+        dispararToast(
+          'aviso',
+          'Cadastre o CPF ou CNPJ nos dados da barbearia (clique em "Editar Barbearia" no topo) antes de criar a subconta.',
+          'Documento Obrigatório'
+        );
+        return;
+      }
+
+      const payloadAsaas: Record<string, any> = {
+        name: selectedTenant.nome_proprietario || selectedTenant.proprietario || selectedTenant.nome || 'Barbearia Parceira',
+        company: selectedTenant.nome || 'Barbearia',
         email:
           selectedTenant.email_dono ||
           selectedTenant.email ||
           `${selectedTenant.slug || 'loja'}@navillebarber.com`,
         cpfCnpj: cpfCnpjFinal,
-        mobilePhone: (selectedTenant.telefone || '').replace(/\D/g, '') || '11999999999',
+        mobilePhone: (selectedTenant.telefone_proprietario || selectedTenant.telefone || '').replace(/\D/g, '') || '11999999999',
         address: selectedTenant.endereco || 'Rua Principal',
         addressNumber: selectedTenant.numero || 'S/N',
         postalCode: (selectedTenant.cep || '13770000').replace(/\D/g, '') || '13770000',
       };
+
+      if (cpfCnpjFinal.length === 11) {
+        payloadAsaas.birthDate = selectedTenant.data_nascimento || '1990-01-01';
+      }
 
       // 3. Provisionamento da Subconta no Asaas via Backend Seguro (se não houver wallet_id)
       let walletIdFinal = selectedTenant.asaas_wallet_id;
@@ -501,6 +515,8 @@ export default function SplitPaymentView({
         const subcontaRes = await sincronizarSubcontaNoBackend(selectedTenant.id, {
           chavePix: chaveLimpa,
           tipoChave: pixTipoChave,
+          cpfCnpj: cpfCnpjFinal,
+          birthDate: selectedTenant.data_nascimento || '1990-01-01',
         });
         walletIdFinal = subcontaRes.walletId;
         accountIdFinal = subcontaRes.id;
