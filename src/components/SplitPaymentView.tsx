@@ -49,11 +49,22 @@ import {
 
 interface SplitPaymentViewProps {
   tenant?: Barbearia | any;
+  barbearia?: Barbearia | any;
   onUpdateTenant?: (updated: any) => void;
+  onBarbeariaUpdated?: (updated: any) => void;
   onClose?: () => void;
 }
 
-export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant, onClose }: SplitPaymentViewProps) {
+export default function SplitPaymentView({
+  tenant,
+  barbearia,
+  onUpdateTenant,
+  onBarbeariaUpdated,
+  onClose,
+}: SplitPaymentViewProps) {
+  const initialTenant = tenant || barbearia || null;
+  const notifyUpdateTenant = onUpdateTenant || onBarbeariaUpdated;
+
   // Lista de lojas para seleção caso seja aberto globalmente
   const [tenants, setTenants] = useState<Barbearia[]>([]);
   const [selectedTenant, setSelectedTenant] = useState<Barbearia | any | null>(initialTenant || null);
@@ -193,26 +204,31 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
 
   // Efeito para carregar barbearias se initialTenant não for passado
   useEffect(() => {
-    if (!initialTenant) {
+    if (initialTenant) {
+      setSelectedTenant(initialTenant);
+    } else {
       setLoadingTenants(true);
       pb.collection('barbearias')
         .getFullList<Barbearia>({ sort: '-created' })
         .then((list) => {
           setTenants(list);
           if (list.length > 0) {
-            setSelectedTenant(list[0]);
+            const savedId = sessionStorage.getItem('naville_selected_tenant_id');
+            const target = (savedId && list.find((b) => b.id === savedId)) || list[0];
+            setSelectedTenant(target);
           }
         })
         .catch((err) => console.error('Erro ao listar barbearias para split:', err))
         .finally(() => setLoadingTenants(false));
-    } else {
-      setSelectedTenant(initialTenant);
     }
   }, [initialTenant]);
 
   // Atualiza estados locais quando tenant selecionado muda
   useEffect(() => {
     if (selectedTenant) {
+      if (selectedTenant.id) {
+        sessionStorage.setItem('naville_selected_tenant_id', selectedTenant.id);
+      }
       setTipoTaxa(selectedTenant.split_taxa_tipo || 'fixa');
       setTaxaValor(selectedTenant.split_taxa_valor ?? 1.50);
       setSplitAtivo(selectedTenant.split_ativo ?? selectedTenant.modulo_split_asaas ?? true);
@@ -236,7 +252,7 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
       carregarProfissionais(selectedTenant.id);
       carregarTerminais(selectedTenant.id);
     }
-  }, [selectedTenant?.id]);
+  }, [selectedTenant?.id, selectedTenant?.updated]);
 
   // Carrega terminais vinculados à barbearia
   const carregarTerminais = async (tenantId: string) => {
@@ -404,20 +420,24 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
         split_contador_mes_atual: Number(splitContadorMes),
         split_taxa_transacao: Number(splitTaxaTransacao),
         split_mensalidade_modulo: Number(splitMensalidadeModulo),
+        valor_modulo_split: Number(splitMensalidadeModulo),
         split_taxa_tipo: tipoTaxa,
         split_taxa_valor: Number(taxaValor),
-        asaas_wallet_id: asaasWalletId.trim() || null,
+        asaas_wallet_id: asaasWalletId.trim() || '',
       };
 
       const updated = await pb.collection('barbearias').update(selectedTenant.id, patch);
       setSelectedTenant(updated);
-      if (onUpdateTenant) onUpdateTenant(updated);
+      if (notifyUpdateTenant) notifyUpdateTenant(updated);
+      dispararToast('sucesso', 'Regras de Split e Retenção salvas com sucesso!', 'Sucesso');
 
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err: any) {
       console.error('Erro ao salvar configurações de split:', err);
-      alert(err.message || 'Falha ao salvar configurações de Split.');
+      const msg = err?.data?.message || err?.message || 'Falha ao salvar configurações de Split.';
+      dispararToast('erro', msg, 'Erro ao Salvar');
+      alert(msg);
     } finally {
       setSavingConfig(false);
     }
@@ -501,7 +521,7 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
       const updated = await pb.collection('barbearias').update(selectedTenant.id, patch);
       setSelectedTenant(updated);
       setAsaasWalletId(walletIdFinal || '');
-      if (onUpdateTenant) onUpdateTenant(updated);
+      if (notifyUpdateTenant) notifyUpdateTenant(updated);
 
       setRepasseSuccess(true);
       setTimeout(() => setRepasseSuccess(false), 3500);
@@ -534,13 +554,13 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
     try {
       setSavingRepasse(true);
       const patch = {
-        asaas_wallet_id: null,
-        asaas_account_id: null,
+        asaas_wallet_id: '',
+        asaas_account_id: '',
       };
       const updated = await pb.collection('barbearias').update(selectedTenant.id, patch);
       setSelectedTenant(updated);
       setAsaasWalletId('');
-      if (onUpdateTenant) onUpdateTenant(updated);
+      if (notifyUpdateTenant) notifyUpdateTenant(updated);
       dispararToast('sucesso', 'Subconta Asaas resetada! Ao preencher a chave Pix e clicar em "Salvar Repasse", a nova subconta será criada na base de Produção.', 'Reset Concluído');
     } catch (err: any) {
       console.error('Erro ao resetar subconta:', err);
@@ -790,8 +810,8 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
     }
     try {
       const updated = await pb.collection('profissionais').update(prof.id, {
-        asaas_wallet_id: null,
-        asaas_account_id: null,
+        asaas_wallet_id: '',
+        asaas_account_id: '',
         split_status: 'pendente',
       });
       setProfissionais((prev) => prev.map((item) => (item.id === updated.id ? (updated as Profissional) : item)));
@@ -805,23 +825,45 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
   // Criar novo barbeiro rápido
   const handleCriarNovoBarbeiro = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTenant || !novoNome) return;
+    if (!selectedTenant || !novoNome.trim()) return;
 
     setSalvandoNovo(true);
+    const comissaoNum = Number(novaComissao) || 0;
+    const taxaDecimal = comissaoNum > 1 ? comissaoNum / 100 : comissaoNum;
+    const novoPayload = {
+      barbearia_id: selectedTenant.id,
+      barbearia: selectedTenant.id,
+      nome: novoNome.trim(),
+      telefone: novoTelefone.trim() || '',
+      taxa_comissao: taxaDecimal,
+      porcentagem_comissao: comissaoNum,
+      cpf_cnpj: novoCpf.trim() || '',
+      ativo: true,
+      tipo_atendimento: 'ambos',
+      aceita_clube: true,
+      servicos_ids: [],
+      split_status: novoCpf.trim() ? 'pendente' : 'recusado',
+      pin: '1234',
+      pin_acesso: '1234',
+    };
+
     try {
-      const record = await pb.collection('profissionais').create({
-        barbearia_id: selectedTenant.id,
-        nome: novoNome,
-        telefone: novoTelefone,
-        taxa_comissao: novaComissao,
-        porcentagem_comissao: novaComissao,
-        cpf_cnpj: novoCpf,
-        ativo: true,
-        tipo_atendimento: 'ambos',
-        aceita_clube: true,
-        servicos_ids: [],
-        split_status: novoCpf ? 'pendente' : 'recusado',
-      });
+      let record: any;
+      try {
+        record = await pb.collection('profissionais').create(novoPayload);
+      } catch (pbErr: any) {
+        console.warn('PocketBase direto falhou, tentando rota interna /api/profissionais:', pbErr);
+        const res = await fetch('/api/profissionais', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(novoPayload),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || errData.message || pbErr?.data?.message || pbErr?.message || 'Falha ao criar barbeiro parceiro.');
+        }
+        record = await res.json();
+      }
 
       setProfissionais((prev) => [record as Profissional, ...prev]);
       setModalNovoBarbeiroOpen(false);
@@ -829,9 +871,12 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
       setNovoTelefone('');
       setNovoCpf('');
       setNovaComissao(50);
+      dispararToast('sucesso', `Barbeiro parceiro ${novoNome.trim()} cadastrado com sucesso!`, 'Cadastrado');
     } catch (err: any) {
       console.error('Erro ao cadastrar profissional:', err);
-      alert(err.message || 'Falha ao cadastrar barbeiro.');
+      const detalheErro = err?.data?.message || err?.message || (typeof err?.data === 'object' ? JSON.stringify(err.data) : '') || 'Falha ao cadastrar barbeiro.';
+      dispararToast('erro', detalheErro, 'Erro no Cadastro');
+      alert(`Falha ao cadastrar barbeiro: ${detalheErro}`);
     } finally {
       setSalvandoNovo(false);
     }

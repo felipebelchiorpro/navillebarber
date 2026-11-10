@@ -50,7 +50,25 @@ export default function SuperAdminDashboard() {
         telefone_proprietario: telefone || '',
         documento,
         email,
-        status: 'ativa'
+        status: 'ativa',
+        // Configurações padrão de Split e Retenção Naville
+        split_ativo: true,
+        modulo_split_asaas: true,
+        split_carencia_tipo: 'dias',
+        split_dias_gratis: 30,
+        split_data_ativacao: new Date().toISOString(),
+        split_franquia_transacoes_mensal: 30,
+        split_contador_mes_atual: 0,
+        split_taxa_transacao: 0.35,
+        split_mensalidade_modulo: 30.00,
+        valor_modulo_split: 30.00,
+        split_taxa_tipo: 'fixa',
+        split_taxa_valor: 1.50,
+        asaas_wallet_id: '',
+        asaas_account_id: '',
+        pix_tipo_chave: 'cnpj',
+        pix_chave_repasse: '',
+        banco_nome: 'Nubank',
       });
       setBarbearias([novaBarbearia, ...barbearias]);
       setIsModalOpen(false);

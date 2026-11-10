@@ -167,9 +167,11 @@ export default function SuperAdminLojasView() {
         const records = await pb.collection('barbearias').getFullList({ sort: '-created' });
         setBarbearias(records);
         if (records.length > 0) {
-          setSelectedTenant(records[0]);
-          syncLocalValues(records[0]);
-          carregarTerminaisTenant(records[0].id);
+          const savedId = sessionStorage.getItem('naville_selected_tenant_id');
+          const target = (savedId && records.find((b) => b.id === savedId)) || records[0];
+          setSelectedTenant(target);
+          syncLocalValues(target);
+          carregarTerminaisTenant(target.id);
         }
       } catch (error) {
         console.error('Erro ao buscar barbearias:', error);
@@ -191,6 +193,9 @@ export default function SuperAdminLojasView() {
 
   const handleSelectTenant = (tenant: any) => {
     setSelectedTenant(tenant);
+    if (tenant?.id) {
+      sessionStorage.setItem('naville_selected_tenant_id', tenant.id);
+    }
     syncLocalValues(tenant);
     carregarTerminaisTenant(tenant.id);
   };

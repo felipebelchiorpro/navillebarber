@@ -24,6 +24,14 @@ const JWT_SECRET = process.env.JWT_SECRET || 'superadmin-secret-jwt-key-naville-
 const PB_URL = process.env.POCKETBASE_URL || 'http://127.0.0.1:8090';
 
 const pb = new PocketBase(PB_URL);
+pb.autoCancellation(false);
+
+const getAsaasConfig = () => {
+  const asaasKey = process.env.ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY_SANDBOX || process.env.VITE_ASAAS_API_KEY_PRODUCTION || '';
+  let asaasUrl = process.env.ASAAS_API_URL || (process.env.VITE_ASAAS_ENV === 'sandbox' ? 'https://sandbox.asaas.com/api/v3' : 'https://api.asaas.com/v3');
+  if (asaasUrl.endsWith('/')) asaasUrl = asaasUrl.slice(0, -1);
+  return { asaasKey, asaasUrl };
+};
 
 // Base de dados fallback em memória para teste imediato e desenvolvimento independente
 const localMockDB = {
@@ -280,8 +288,7 @@ app.post('/api/asaas/sync-tenant', async (req, res) => {
     return res.status(400).json({ error: 'ID do tenant/barbearia não foi informado ou é inválido.' });
   }
 
-  const asaasKey = process.env.ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY_SANDBOX || process.env.VITE_ASAAS_API_KEY_PRODUCTION || '';
-  const asaasUrl = process.env.ASAAS_API_URL || (process.env.VITE_ASAAS_ENV === 'sandbox' ? 'https://sandbox.asaas.com/api/v3' : 'https://api.asaas.com/v3');
+  const { asaasKey, asaasUrl } = getAsaasConfig();
 
   if (!asaasKey) {
     return res.status(500).json({
@@ -567,8 +574,7 @@ app.post('/api/tenants/:id/sync-asaas', async (req, res) => {
 
 app.post('/api/tenants/:id/sync-subconta', async (req, res) => {
   const { id } = req.params;
-  const asaasKey = process.env.ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY || '';
-  const asaasUrl = process.env.ASAAS_API_URL || 'https://api.asaas.com/v3';
+  const { asaasKey, asaasUrl } = getAsaasConfig();
 
   if (!asaasKey) {
     return res.status(500).json({
@@ -635,8 +641,7 @@ app.post('/api/tenants/:id/sync-subconta', async (req, res) => {
 
 app.post('/api/profissionais/:id/sync-subconta', async (req, res) => {
   const { id } = req.params;
-  const asaasKey = process.env.ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY || '';
-  const asaasUrl = process.env.ASAAS_API_URL || 'https://api.asaas.com/v3';
+  const { asaasKey, asaasUrl } = getAsaasConfig();
 
   if (!asaasKey) {
     return res.status(500).json({
@@ -703,6 +708,27 @@ app.post('/api/profissionais/:id/sync-subconta', async (req, res) => {
   } catch (err) {
     console.error('Erro em sync-subconta profissional:', err);
     return res.status(500).json({ error: err.message || 'Erro interno ao provisionar subconta do profissional no Asaas.' });
+  }
+});
+
+// Endpoint seguro para criação de profissionais/barbeiros parceiros
+app.post('/api/profissionais', async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data.barbearia_id && data.barbearia) {
+      data.barbearia_id = data.barbearia;
+    }
+    if (!data.barbearia && data.barbearia_id) {
+      data.barbearia = data.barbearia_id;
+    }
+    const record = await pb.collection('profissionais').create(data);
+    return res.status(201).json(record);
+  } catch (err) {
+    console.error('Erro ao criar profissional no backend:', err);
+    return res.status(err.status || 400).json({
+      error: err.message || 'Falha ao cadastrar barbeiro.',
+      details: err.data
+    });
   }
 });
 
