@@ -272,6 +272,96 @@ function handleSyncProfissionalSubconta(e) {
 }
 
 // Registra ambas as notações (:id e {id}) para compatibilidade total entre versões do PocketBase
+function handleSyncTenantAsaasPost(e) {
+    let tenantId = "";
+    try {
+        const body = e.requestInfo().body || {};
+        tenantId = body.tenantId || body.id || "";
+    } catch (_) {}
+    if (!tenantId) {
+        tenantId = extractParamId(e);
+    }
+
+    if (!tenantId || tenantId === "undefined" || tenantId === "null") {
+        return e.json(400, { error: "ID do tenant/barbearia não foi informado ou é inválido." });
+    }
+
+    let tenant;
+    try {
+        tenant = $app.findRecordById("barbearias", tenantId);
+    } catch (err) {
+        return e.json(404, { error: "Barbearia não localizada no banco de dados PocketBase." });
+    }
+
+    const asaasKey = $os.getenv("ASAAS_API_KEY") || $os.getenv("VITE_ASAAS_API_KEY") || $os.getenv("VITE_ASAAS_API_KEY_SANDBOX") || "";
+    const asaasUrl = $os.getenv("ASAAS_API_URL") || ($os.getenv("VITE_ASAAS_ENV") === "sandbox" ? "https://sandbox.asaas.com/api/v3" : "https://api.asaas.com/v3");
+
+    if (!asaasKey) {
+        return e.json(500, {
+            error: "Chave ASAAS_API_KEY não configurada nas variáveis de ambiente do servidor."
+        });
+    }
+
+    const asaasIdAtual = tenant.getString("asaas_id") || tenant.getString("asaas_customer_id") || "";
+    const nomeComprador = tenant.getString("proprietario") || tenant.getString("nome_proprietario") || tenant.getString("nome") || "Cliente Naville";
+    const email = tenant.getString("email_dono") || tenant.getString("email") || (tenant.getString("slug") + "@navillebarber.com");
+    let doc = tenant.getString("documento") || tenant.getString("cpf_cnpj") || tenant.getString("cnpj") || "";
+    doc = doc.replace(/\D/g, "");
+
+    const payload = {
+        name: nomeComprador,
+        email: email
+    };
+    if (doc.length === 11 || doc.length === 14) {
+        payload.cpfCnpj = doc;
+    }
+    const tel = tenant.getString("telefone") || "";
+    if (tel) {
+        payload.mobilePhone = tel.replace(/\D/g, "");
+    }
+
+    var endpoint = asaasUrl + "/customers";
+    if (asaasIdAtual) {
+        endpoint = asaasUrl + "/customers/" + encodeURIComponent(asaasIdAtual);
+    }
+
+    const res = $http.send({
+        url: endpoint,
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: {
+            "Content-Type": "application/json",
+            "access_token": asaasKey
+        }
+    });
+
+    if (res.statusCode >= 400) {
+        let errMsg = "Erro retornado pelo Asaas (" + res.statusCode + ")";
+        try {
+            errMsg = res.json.errors?.[0]?.description || res.json.message || errMsg;
+        } catch (_) {}
+        return e.json(res.statusCode, { error: errMsg });
+    }
+
+    const customerId = res.json.id || asaasIdAtual;
+    const walletId = res.json.walletId || tenant.getString("asaas_wallet_id") || customerId;
+
+    tenant.set("asaas_id", customerId);
+    tenant.set("asaas_wallet_id", walletId);
+    $app.save(tenant);
+
+    return e.json(200, {
+        success: true,
+        walletId: walletId,
+        asaas_id: customerId,
+        asaas_customer_id: customerId,
+        asaas_wallet_id: walletId,
+        customer: res.json
+    });
+}
+
+routerAdd("POST", "/api/asaas/sync-tenant", handleSyncTenantAsaasPost);
+
 routerAdd("POST", "/api/tenants/:id/sync-asaas", handleSyncTenantAsaas);
 routerAdd("POST", "/api/tenants/{id}/sync-asaas", handleSyncTenantAsaas);
 

@@ -41,18 +41,7 @@ import {
 } from 'lucide-react';
 import SplitPaymentView from './SplitPaymentView';
 import { pb } from '../lib/pocketbase';
-import {
-  sincronizarTenantNoBackend,
-  criarClienteAsaas,
-  criarCobrancaAsaas,
-  criarAssinaturaAsaas,
-  listarCobrancasClienteAsaas,
-  atualizarClienteAsaas,
-  atualizarCobrancaAsaas,
-  calcularTaxaNavilleSplit,
-  CobrancaAsaas,
-  AsaasBillingType
-} from '../lib/asaas';
+import type { CobrancaAsaas, AsaasBillingType } from '../lib/asaas';
 
 export default function SuperAdminLojasView() {
   const [barbearias, setBarbearias] = useState<any[]>([]);
@@ -280,16 +269,35 @@ export default function SuperAdminLojasView() {
 
     setSyncing(true);
     try {
-      // 2. Dispara a sincronização com fallback inteligente automático
-      const data = await sincronizarTenantNoBackend(selectedTenant.id);
+      // 2. Chamada HTTP interna para a rota do backend seguro
+      const response = await fetch('/api/asaas/sync-tenant', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ tenantId: selectedTenant.id })
+      });
 
-      const asaasIdGerado = data.asaas_id || data.id;
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || `Erro ao sincronizar com Asaas (${response.status})`);
+      }
+
+      const walletId = data.walletId || data.asaas_wallet_id || data.asaas_id || data.id;
+      const asaasId = data.asaas_id || data.asaas_customer_id || walletId;
 
       // 3. Atualiza os estados locais imediatamente
-      const tenantAtualizado = { ...selectedTenant, asaas_id: asaasIdGerado };
+      const tenantAtualizado = {
+        ...selectedTenant,
+        asaas_id: asaasId,
+        asaas_wallet_id: walletId || selectedTenant.asaas_wallet_id,
+      };
       setSelectedTenant(tenantAtualizado);
       setBarbearias((prev) => prev.map((b) => (b.id === tenantAtualizado.id ? tenantAtualizado : b)));
-      dispararToast('sucesso', `Cliente sincronizado com sucesso no Asaas Produção! ID: ${asaasIdGerado}`, 'Asaas Conectado');
+
+      // 4. Toast de confirmação e sucesso
+      dispararToast('sucesso', `Barbearia sincronizada com sucesso no Asaas! ID: ${walletId || asaasId}`, 'Sucesso');
     } catch (error: any) {
       console.error('[SYNC TENANT ERROR]', { erro: error, tenant: selectedTenant });
       const msgErro = error?.message || 'Falha ao sincronizar cliente no Asaas.';
@@ -341,20 +349,20 @@ export default function SuperAdminLojasView() {
     if (!selectedTenant) return;
     setSavingComprador(true);
     try {
-      if (selectedTenant.asaas_id) {
-        await atualizarClienteAsaas(selectedTenant.asaas_id, {
-          name: nomeCompradorInput,
-          email: emailCompradorInput,
-          cpfCnpj: docCompradorInput,
-        });
-      }
-
       const updated = await pb.collection('barbearias').update(selectedTenant.id, {
         proprietario: nomeCompradorInput,
         nome_proprietario: nomeCompradorInput,
         email: emailCompradorInput,
         documento: docCompradorInput,
       });
+
+      if (selectedTenant.asaas_id) {
+        await fetch('/api/asaas/sync-tenant', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenantId: selectedTenant.id }),
+        }).catch((err) => console.warn('Aviso ao sincronizar alteração no Asaas:', err));
+      }
 
       const tenantAtualizado = { ...selectedTenant, ...updated };
       setSelectedTenant(tenantAtualizado);
@@ -454,9 +462,18 @@ export default function SuperAdminLojasView() {
     if (!novoVencimentoInput) return;
     setSavingVencimento(true);
     try {
-      const updated = await atualizarCobrancaAsaas(cobId, { dueDate: novoVencimentoInput });
+      const response = await fetch(`/api/asaas/payments/${encodeURIComponent(cobId)}/due-date`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dueDate: novoVencimentoInput }),
+      });
+      const updated = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(updated.error || updated.message || 'Erro ao alterar vencimento no Asaas');
+      }
+
       setHistoricoCobrancas((prev) =>
-        prev.map((c) => (c.id === cobId ? { ...c, dueDate: updated.dueDate } : c))
+        prev.map((c) => (c.id === cobId ? { ...c, dueDate: updated.dueDate || novoVencimentoInput } : c))
       );
 
       const faturasPB = await pb.collection('faturas').getFullList({
@@ -464,7 +481,7 @@ export default function SuperAdminLojasView() {
       });
       if (faturasPB.length > 0) {
         await pb.collection('faturas').update(faturasPB[0].id, {
-          data_vencimento: updated.dueDate,
+          data_vencimento: updated.dueDate || novoVencimentoInput,
         });
       }
 
@@ -499,27 +516,45 @@ export default function SuperAdminLojasView() {
       const statusFatura = 'pendente';
 
       if (modalidadeCobranca === 'recorrente') {
-        await criarAssinaturaAsaas({
-          customer: selectedTenant.asaas_id,
-          value: valorCobranca,
-          nextDueDate: vencimentoCobranca,
-          billingType: metodoCobranca,
-          description: descricaoCobranca,
-          cycle: 'MONTHLY'
+        const subRes = await fetch('/api/asaas/subscriptions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer: selectedTenant.asaas_id,
+            value: valorCobranca,
+            nextDueDate: vencimentoCobranca,
+            billingType: metodoCobranca,
+            description: descricaoCobranca,
+            cycle: 'MONTHLY'
+          })
         });
-        const payments = await listarCobrancasClienteAsaas(selectedTenant.asaas_id);
-        if (payments.length > 0) {
+        const subData = await subRes.json().catch(() => ({}));
+        if (!subRes.ok) {
+          throw new Error(subData.error || subData.message || 'Erro ao emitir assinatura recorrente no Asaas');
+        }
+
+        const paymentsRes = await fetch(`/api/asaas/customers/${encodeURIComponent(selectedTenant.asaas_id)}/payments`);
+        const payments = await paymentsRes.json().catch(() => []);
+        if (Array.isArray(payments) && payments.length > 0) {
           linkPagamento = payments[0].invoiceUrl || payments[0].bankSlipUrl || '';
           setCobrancaGerada(payments[0]);
         }
       } else {
-        const cobranca = await criarCobrancaAsaas({
-          customer: selectedTenant.asaas_id,
-          value: valorCobranca,
-          dueDate: vencimentoCobranca,
-          billingType: metodoCobranca,
-          description: descricaoCobranca
+        const cobRes = await fetch('/api/asaas/payments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer: selectedTenant.asaas_id,
+            value: valorCobranca,
+            dueDate: vencimentoCobranca,
+            billingType: metodoCobranca,
+            description: descricaoCobranca
+          })
         });
+        const cobranca = await cobRes.json().catch(() => ({}));
+        if (!cobRes.ok) {
+          throw new Error(cobranca.error || cobranca.message || 'Erro ao emitir cobrança no Asaas');
+        }
         linkPagamento = cobranca.invoiceUrl || cobranca.bankSlipUrl || '';
         setCobrancaGerada(cobranca);
       }
@@ -558,7 +593,12 @@ export default function SuperAdminLojasView() {
     setIsHistoricoModalOpen(true);
     setLoadingHistorico(true);
     try {
-      const lista = await listarCobrancasClienteAsaas(selectedTenant.asaas_id);
+      const res = await fetch(`/api/asaas/customers/${encodeURIComponent(selectedTenant.asaas_id)}/payments`);
+      const lista = await res.json().catch(() => []);
+      if (!res.ok) {
+        throw new Error(lista.error || lista.message || 'Não foi possível carregar o histórico do Asaas.');
+      }
+      setHistoricoCobrancas(Array.isArray(lista) ? lista : []);
       setHistoricoCobrancas(lista);
     } catch (err: any) {
       console.error('Erro ao listar histórico do Asaas:', err);

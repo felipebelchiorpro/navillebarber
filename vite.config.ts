@@ -78,6 +78,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        '/api/asaas/sync-tenant': {
+          target: env.VITE_BACKEND_URL || env.VITE_POCKETBASE_URL || 'http://127.0.0.1:8090',
+          changeOrigin: true,
+          secure: false,
+        },
         '/api/asaas': {
           target: asaasTarget,
           changeOrigin: true,

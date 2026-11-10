@@ -261,6 +261,200 @@ app.patch('/api/admin/tenants/:id/toggle-status', requireSuperUser, async (req, 
 // ============================================================
 // 4. SINCRONIZAÇÃO SEGURA ASAAS NO BACKEND (SEM EXPOR CHAVE)
 // ============================================================
+app.post('/api/asaas/sync-tenant', async (req, res) => {
+  const tenantId = req.body?.tenantId || req.body?.id;
+
+  if (!tenantId || tenantId === 'undefined' || tenantId === 'null') {
+    return res.status(400).json({ error: 'ID do tenant/barbearia não foi informado ou é inválido.' });
+  }
+
+  const asaasKey = process.env.ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY_SANDBOX || process.env.VITE_ASAAS_API_KEY_PRODUCTION || '';
+  const asaasUrl = process.env.ASAAS_API_URL || (process.env.VITE_ASAAS_ENV === 'sandbox' ? 'https://sandbox.asaas.com/api/v3' : 'https://api.asaas.com/v3');
+
+  if (!asaasKey) {
+    return res.status(500).json({
+      error: 'Chave ASAAS_API_KEY não configurada nas variáveis de ambiente do servidor.'
+    });
+  }
+
+  try {
+    let tenant = null;
+    try {
+      tenant = await pb.collection('barbearias').getOne(tenantId);
+    } catch {
+      tenant = localMockDB.tenants.find(t => t.id === tenantId);
+    }
+
+    if (!tenant) {
+      return res.status(404).json({ error: 'Barbearia não encontrada no banco de dados.' });
+    }
+
+    const asaasIdAtual = tenant.asaas_id || tenant.asaas_customer_id || '';
+    const nomeComprador = tenant.proprietario || tenant.nome_proprietario || tenant.nome || 'Cliente Naville';
+    const email = tenant.email_dono || tenant.email || `${tenant.slug || 'barbearia'}@navillebarber.com`;
+    let doc = (tenant.documento || tenant.cpf_cnpj || tenant.cnpj || '').replace(/\D/g, '');
+
+    const payload = {
+      name: nomeComprador,
+      email: email
+    };
+    if (doc.length === 11 || doc.length === 14) {
+      payload.cpfCnpj = doc;
+    }
+    if (tenant.telefone) {
+      payload.mobilePhone = tenant.telefone.replace(/\D/g, '');
+    }
+
+    // Se NÃO possui ID prévio gravado, NUNCA tenta GET: cria diretamente via POST /customers
+    const endpoint = asaasIdAtual
+      ? `${asaasUrl}/customers/${encodeURIComponent(asaasIdAtual)}`
+      : `${asaasUrl}/customers`;
+
+    const asaasResponse = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'access_token': asaasKey
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const asaasData = await asaasResponse.json().catch(() => ({}));
+
+    if (!asaasResponse.ok) {
+      const errMsg = asaasData.errors?.[0]?.description || asaasData.message || `Erro no Asaas (${asaasResponse.status})`;
+      return res.status(asaasResponse.status).json({ error: errMsg });
+    }
+
+    const customerId = asaasData.id || asaasIdAtual;
+    const walletId = asaasData.walletId || tenant.asaas_wallet_id || customerId;
+
+    const patch = {
+      asaas_id: customerId,
+      asaas_wallet_id: walletId
+    };
+
+    try {
+      await pb.collection('barbearias').update(tenantId, patch);
+    } catch (pbErr) {
+      console.warn('Aviso ao atualizar barbearia no PocketBase:', pbErr.message);
+      if (tenant && localMockDB.tenants.find(t => t.id === tenantId)) {
+        tenant.asaas_id = customerId;
+        tenant.asaas_wallet_id = walletId;
+      }
+    }
+
+    return res.json({
+      success: true,
+      walletId: walletId,
+      asaas_id: customerId,
+      asaas_customer_id: customerId,
+      asaas_wallet_id: walletId,
+      customer: asaasData
+    });
+  } catch (err) {
+    console.error('Erro em /api/asaas/sync-tenant:', err);
+    return res.status(500).json({ error: err.message || 'Erro interno ao sincronizar com Asaas.' });
+  }
+});
+
+// Cobranças do cliente Asaas
+app.get('/api/asaas/customers/:id/payments', async (req, res) => {
+  const { id } = req.params;
+  const asaasKey = process.env.ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY_SANDBOX || '';
+  const asaasUrl = process.env.ASAAS_API_URL || (process.env.VITE_ASAAS_ENV === 'sandbox' ? 'https://sandbox.asaas.com/api/v3' : 'https://api.asaas.com/v3');
+
+  if (!asaasKey) {
+    return res.status(500).json({ error: 'Chave ASAAS_API_KEY não configurada no servidor.' });
+  }
+
+  try {
+    const response = await fetch(`${asaasUrl}/payments?customer=${encodeURIComponent(id)}&limit=50`, {
+      headers: { 'access_token': asaasKey }
+    });
+    const data = await response.json();
+    return res.json(data.data || []);
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Erro ao buscar cobranças no Asaas.' });
+  }
+});
+
+// Criar cobrança avulsa no Asaas via backend
+app.post('/api/asaas/payments', async (req, res) => {
+  const asaasKey = process.env.ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY_SANDBOX || '';
+  const asaasUrl = process.env.ASAAS_API_URL || (process.env.VITE_ASAAS_ENV === 'sandbox' ? 'https://sandbox.asaas.com/api/v3' : 'https://api.asaas.com/v3');
+
+  if (!asaasKey) {
+    return res.status(500).json({ error: 'Chave ASAAS_API_KEY não configurada no servidor.' });
+  }
+
+  try {
+    const response = await fetch(`${asaasUrl}/payments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'access_token': asaasKey },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      return res.status(response.status).json({ error: data.errors?.[0]?.description || data.message || 'Erro no Asaas' });
+    }
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Criar assinatura recorrente no Asaas via backend
+app.post('/api/asaas/subscriptions', async (req, res) => {
+  const asaasKey = process.env.ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY_SANDBOX || '';
+  const asaasUrl = process.env.ASAAS_API_URL || (process.env.VITE_ASAAS_ENV === 'sandbox' ? 'https://sandbox.asaas.com/api/v3' : 'https://api.asaas.com/v3');
+
+  if (!asaasKey) {
+    return res.status(500).json({ error: 'Chave ASAAS_API_KEY não configurada no servidor.' });
+  }
+
+  try {
+    const response = await fetch(`${asaasUrl}/subscriptions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'access_token': asaasKey },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      return res.status(response.status).json({ error: data.errors?.[0]?.description || data.message || 'Erro no Asaas' });
+    }
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Atualizar data de vencimento de cobrança no Asaas via backend
+app.post('/api/asaas/payments/:id/due-date', async (req, res) => {
+  const { id } = req.params;
+  const asaasKey = process.env.ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY_SANDBOX || '';
+  const asaasUrl = process.env.ASAAS_API_URL || (process.env.VITE_ASAAS_ENV === 'sandbox' ? 'https://sandbox.asaas.com/api/v3' : 'https://api.asaas.com/v3');
+
+  if (!asaasKey) {
+    return res.status(500).json({ error: 'Chave ASAAS_API_KEY não configurada no servidor.' });
+  }
+
+  try {
+    const response = await fetch(`${asaasUrl}/payments/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'access_token': asaasKey },
+      body: JSON.stringify({ dueDate: req.body?.dueDate })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      return res.status(response.status).json({ error: data.errors?.[0]?.description || data.message || 'Erro no Asaas' });
+    }
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/tenants/:id/sync-asaas', async (req, res) => {
   const { id } = req.params;
 
