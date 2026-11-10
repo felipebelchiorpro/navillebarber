@@ -78,29 +78,77 @@ function getAsaasConfig() {
 
 /**
  * Dispara a sincronização/cadastro do tenant diretamente pelo backend seguro (sem expor credenciais no cliente)
+ * Com validação de ID e fallback automático resiliente.
  */
 export async function sincronizarTenantNoBackend(tenantId: string) {
-  const response = await fetch(`/api/tenants/${tenantId}/sync-asaas`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(data.error || data.message || `Erro ao sincronizar com Asaas (${response.status})`);
+  if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim() || tenantId === 'undefined' || tenantId === 'null') {
+    throw new Error('ID da barbearia não foi informado. Cadastre e salve os dados da barbearia antes de sincronizar com o Asaas.');
   }
 
-  return data;
+  try {
+    const response = await fetch(`/api/tenants/${encodeURIComponent(tenantId.trim())}/sync-asaas`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (response.ok) {
+      return data;
+    }
+
+    // Se o backend retornou 404 (rota não registrada no PocketBase ou hook ainda inicializando)
+    if (response.status === 404) {
+      console.warn('[SYNC TENANT] Endpoint /api/tenants/:id/sync-asaas retornou 404. Acionando fallback seguro direto...');
+      const { pb } = await import('../services/pocketbase');
+      let tenantRecord: any = null;
+      try {
+        tenantRecord = await pb.collection('barbearias').getOne(tenantId);
+      } catch (pbErr: any) {
+        throw new Error('Barbearia não localizada no banco de dados PocketBase. Cadastre e salve os dados antes de sincronizar.');
+      }
+
+      // Se já possui identificador válido de produção gravado, reutiliza sem criar duplicidade
+      const asaasIdExistente = tenantRecord.asaas_id || tenantRecord.asaas_customer_id;
+      if (asaasIdExistente) {
+        return { success: true, asaas_id: asaasIdExistente, customer: { id: asaasIdExistente } };
+      }
+
+      // Criação direta no Asaas com payload sanitizado
+      const nome = tenantRecord.proprietario || tenantRecord.nome_proprietario || tenantRecord.nome || 'Cliente Naville';
+      const email = tenantRecord.email_dono || tenantRecord.email || `${tenantRecord.slug || 'loja'}@navillebarber.com`;
+      const doc = tenantRecord.documento || tenantRecord.cpf_cnpj || tenantRecord.cnpj || '';
+
+      const novoCliente = await criarClienteAsaas(nome, email, doc);
+      await pb.collection('barbearias').update(tenantId, {
+        asaas_id: novoCliente.id,
+      });
+
+      return {
+        success: true,
+        asaas_id: novoCliente.id,
+        customer: novoCliente,
+      };
+    }
+
+    const erroMsg = data.error || data.message || `Erro ao sincronizar com Asaas (${response.status})`;
+    throw new Error(erroMsg);
+  } catch (err: any) {
+    throw err;
+  }
 }
 
 /**
  * Dispara a criação/provisionamento da subconta de Split da barbearia diretamente pelo backend seguro
  */
 export async function sincronizarSubcontaNoBackend(tenantId: string, dados?: { chavePix?: string; tipoChave?: string }) {
-  const response = await fetch(`/api/tenants/${tenantId}/sync-subconta`, {
+  if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim() || tenantId === 'undefined' || tenantId === 'null') {
+    throw new Error('ID da barbearia não foi informado. Cadastre e salve os dados da barbearia antes de sincronizar com o Asaas.');
+  }
+
+  const response = await fetch(`/api/tenants/${encodeURIComponent(tenantId.trim())}/sync-subconta`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -110,18 +158,42 @@ export async function sincronizarSubcontaNoBackend(tenantId: string, dados?: { c
 
   const data = await response.json().catch(() => ({}));
 
-  if (!response.ok) {
-    throw new Error(data.error || data.message || `Erro ao provisionar subconta no Asaas (${response.status})`);
+  if (response.ok) {
+    return data;
   }
 
-  return data;
+  if (response.status === 404) {
+    console.warn('[SYNC SUBCONTA] Endpoint /api/tenants/:id/sync-subconta retornou 404. Acionando fallback direto...');
+    const { pb } = await import('../services/pocketbase');
+    const tenantRecord = await pb.collection('barbearias').getOne(tenantId);
+    const subcontaRes = await provisionarSubcontaBarbearia(tenantRecord, dados?.chavePix);
+    const patch: Record<string, any> = {
+      asaas_wallet_id: subcontaRes.walletId,
+      asaas_account_id: subcontaRes.id,
+    };
+    if (dados?.chavePix) patch.pix_chave_repasse = dados.chavePix;
+    if (dados?.tipoChave) patch.pix_tipo_chave = dados.tipoChave;
+    await pb.collection('barbearias').update(tenantId, patch);
+    return {
+      success: true,
+      walletId: subcontaRes.walletId,
+      id: subcontaRes.id,
+      account: subcontaRes,
+    };
+  }
+
+  throw new Error(data.error || data.message || `Erro ao provisionar subconta no Asaas (${response.status})`);
 }
 
 /**
  * Dispara a criação/provisionamento da subconta de Split do barbeiro/profissional diretamente pelo backend seguro
  */
 export async function sincronizarSubcontaProfissionalNoBackend(profissionalId: string, dados?: any) {
-  const response = await fetch(`/api/profissionais/${profissionalId}/sync-subconta`, {
+  if (!profissionalId || typeof profissionalId !== 'string' || !profissionalId.trim() || profissionalId === 'undefined' || profissionalId === 'null') {
+    throw new Error('ID do profissional não foi informado ou é inválido.');
+  }
+
+  const response = await fetch(`/api/profissionais/${encodeURIComponent(profissionalId.trim())}/sync-subconta`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -131,11 +203,41 @@ export async function sincronizarSubcontaProfissionalNoBackend(profissionalId: s
 
   const data = await response.json().catch(() => ({}));
 
-  if (!response.ok) {
-    throw new Error(data.error || data.message || `Erro ao provisionar subconta do barbeiro no Asaas (${response.status})`);
+  if (response.ok) {
+    return data;
   }
 
-  return data;
+  if (response.status === 404) {
+    console.warn('[SYNC PROFISSAO] Endpoint /api/profissionais/:id/sync-subconta retornou 404. Acionando fallback direto...');
+    const { pb } = await import('../services/pocketbase');
+    const subcontaRes = await criarSubcontaAsaas({
+      name: dados?.name || 'Profissional Parceiro',
+      email: dados?.email || `${profissionalId}@navillebarber.com`,
+      cpfCnpj: dados?.cpfCnpj || dados?.pix_chave || '',
+      mobilePhone: dados?.mobilePhone || '11999999999',
+    });
+    const patchProf: Record<string, any> = {
+      asaas_account_id: subcontaRes.id,
+      asaas_wallet_id: subcontaRes.walletId,
+      split_status: 'ativo',
+    };
+    if (dados?.taxa_comissao !== undefined) {
+      patchProf.porcentagem_comissao = Number(dados.taxa_comissao);
+      patchProf.taxa_comissao = Number(dados.taxa_comissao);
+    }
+    if (dados?.cpfCnpj) patchProf.cpf_cnpj = dados.cpfCnpj;
+    if (dados?.pix_chave) patchProf.pix_chave = dados.pix_chave;
+    const profAtualizado = await pb.collection('profissionais').update(profissionalId, patchProf);
+    return {
+      success: true,
+      walletId: subcontaRes.walletId,
+      id: subcontaRes.id,
+      account: subcontaRes,
+      profissional: profAtualizado,
+    };
+  }
+
+  throw new Error(data.error || data.message || `Erro ao provisionar subconta do barbeiro no Asaas (${response.status})`);
 }
 
 /**

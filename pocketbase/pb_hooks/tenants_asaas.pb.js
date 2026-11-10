@@ -2,17 +2,45 @@
 
 /**
  * Hook do PocketBase para sincronização segura com o Gateway Asaas no servidor.
- * Protege a ASAAS_API_KEY mantendo-a estritamente no backend.
+ * Registra rotas para compatibilidade ampla tanto com rotas `:id` quanto `{id}`.
  */
 
-routerAdd("POST", "/api/tenants/{id}/sync-asaas", (e) => {
-    const id = e.request.pathValue("id");
+function extractParamId(e) {
+    var id = "";
+    try {
+        if (typeof e.pathParam === "function") {
+            id = e.pathParam("id");
+        }
+    } catch (_) {}
+    if (!id) {
+        try {
+            if (e.request && typeof e.request.pathValue === "function") {
+                id = e.request.pathValue("id");
+            }
+        } catch (_) {}
+    }
+    if (!id) {
+        try {
+            if (typeof e.get === "function") {
+                id = e.get("id");
+            }
+        } catch (_) {}
+    }
+    return (id || "").toString().trim();
+}
+
+function handleSyncTenantAsaas(e) {
+    const id = extractParamId(e);
+
+    if (!id || id === "undefined" || id === "null") {
+        return e.json(400, { error: "ID do tenant/barbearia não foi informado ou é inválido." });
+    }
 
     let tenant;
     try {
         tenant = $app.findRecordById("barbearias", id);
     } catch (err) {
-        return e.json(404, { error: "Barbearia não encontrada no PocketBase." });
+        return e.json(404, { error: "Barbearia não localizada no banco de dados PocketBase." });
     }
 
     const asaasKey = $os.getenv("ASAAS_API_KEY") || $os.getenv("VITE_ASAAS_API_KEY") || "";
@@ -20,11 +48,12 @@ routerAdd("POST", "/api/tenants/{id}/sync-asaas", (e) => {
 
     if (!asaasKey) {
         return e.json(500, {
-            error: "Chave ASAAS_API_KEY não configurada nas variáveis de ambiente do servidor (Coolify)."
+            error: "Chave ASAAS_API_KEY não configurada nas variáveis de ambiente do servidor."
         });
     }
 
-    const nomeComprador = tenant.getString("proprietario") || tenant.getString("nome_proprietario") || tenant.getString("nome");
+    const asaasIdAtual = tenant.getString("asaas_id") || tenant.getString("asaas_customer_id") || "";
+    const nomeComprador = tenant.getString("proprietario") || tenant.getString("nome_proprietario") || tenant.getString("nome") || "Cliente Naville";
     const email = tenant.getString("email_dono") || tenant.getString("email") || (tenant.getString("slug") + "@navillebarber.com");
     let doc = tenant.getString("documento") || tenant.getString("cpf_cnpj") || tenant.getString("cnpj") || "";
     doc = doc.replace(/\D/g, "");
@@ -37,8 +66,15 @@ routerAdd("POST", "/api/tenants/{id}/sync-asaas", (e) => {
         payload.cpfCnpj = doc;
     }
 
+    // Se NÃO possui ID prévio gravado, NUNCA tenta GET: cria diretamente via POST /customers
+    var endpoint = asaasUrl + "/customers";
+    if (asaasIdAtual) {
+        // Se já possui identificador válido de produção, atualiza o cadastro
+        endpoint = asaasUrl + "/customers/" + encodeURIComponent(asaasIdAtual);
+    }
+
     const res = $http.send({
-        url: asaasUrl + "/customers",
+        url: endpoint,
         method: "POST",
         body: JSON.stringify(payload),
         headers: {
@@ -55,9 +91,8 @@ routerAdd("POST", "/api/tenants/{id}/sync-asaas", (e) => {
         return e.json(res.statusCode, { error: errMsg });
     }
 
-    const customerId = res.json.id;
+    const customerId = res.json.id || asaasIdAtual;
 
-    // Salva o ID retornado diretamente na barbearia
     tenant.set("asaas_id", customerId);
     $app.save(tenant);
 
@@ -66,16 +101,20 @@ routerAdd("POST", "/api/tenants/{id}/sync-asaas", (e) => {
         asaas_id: customerId,
         customer: res.json
     });
-});
+}
 
-routerAdd("POST", "/api/tenants/{id}/sync-subconta", (e) => {
-    const id = e.request.pathValue("id");
+function handleSyncTenantSubconta(e) {
+    const id = extractParamId(e);
+
+    if (!id || id === "undefined" || id === "null") {
+        return e.json(400, { error: "ID do tenant/barbearia não foi informado ou é inválido." });
+    }
 
     let tenant;
     try {
         tenant = $app.findRecordById("barbearias", id);
     } catch (err) {
-        return e.json(404, { error: "Barbearia não encontrada no PocketBase." });
+        return e.json(404, { error: "Barbearia não localizada no banco de dados PocketBase." });
     }
 
     const asaasKey = $os.getenv("ASAAS_API_KEY") || $os.getenv("VITE_ASAAS_API_KEY") || "";
@@ -83,7 +122,7 @@ routerAdd("POST", "/api/tenants/{id}/sync-subconta", (e) => {
 
     if (!asaasKey) {
         return e.json(500, {
-            error: "Chave ASAAS_API_KEY não configurada nas variáveis de ambiente do servidor (Coolify)."
+            error: "Chave ASAAS_API_KEY não configurada nas variáveis de ambiente do servidor."
         });
     }
 
@@ -99,7 +138,7 @@ routerAdd("POST", "/api/tenants/{id}/sync-subconta", (e) => {
     }
 
     const payload = {
-        name: tenant.getString("nome"),
+        name: tenant.getString("nome") || "Barbearia Parceira",
         email: tenant.getString("email_dono") || tenant.getString("email") || (tenant.getString("slug") + "@navillebarber.com"),
         cpfCnpj: doc || chavePix.padEnd(11, "0"),
         mobilePhone: (tenant.getString("telefone") || "11999999999").replace(/\D/g, ""),
@@ -144,10 +183,14 @@ routerAdd("POST", "/api/tenants/{id}/sync-subconta", (e) => {
         id: res.json.id,
         account: res.json
     });
-});
+}
 
-routerAdd("POST", "/api/profissionais/{id}/sync-subconta", (e) => {
-    const id = e.request.pathValue("id");
+function handleSyncProfissionalSubconta(e) {
+    const id = extractParamId(e);
+
+    if (!id || id === "undefined" || id === "null") {
+        return e.json(400, { error: "ID do profissional não foi informado ou é inválido." });
+    }
 
     let profissional;
     try {
@@ -161,7 +204,7 @@ routerAdd("POST", "/api/profissionais/{id}/sync-subconta", (e) => {
 
     if (!asaasKey) {
         return e.json(500, {
-            error: "Chave ASAAS_API_KEY não configurada nas variáveis de ambiente do servidor (Coolify)."
+            error: "Chave ASAAS_API_KEY não configurada nas variáveis de ambiente do servidor."
         });
     }
 
@@ -226,4 +269,14 @@ routerAdd("POST", "/api/profissionais/{id}/sync-subconta", (e) => {
         id: res.json.id,
         account: res.json
     });
-});
+}
+
+// Registra ambas as notações (:id e {id}) para compatibilidade total entre versões do PocketBase
+routerAdd("POST", "/api/tenants/:id/sync-asaas", handleSyncTenantAsaas);
+routerAdd("POST", "/api/tenants/{id}/sync-asaas", handleSyncTenantAsaas);
+
+routerAdd("POST", "/api/tenants/:id/sync-subconta", handleSyncTenantSubconta);
+routerAdd("POST", "/api/tenants/{id}/sync-subconta", handleSyncTenantSubconta);
+
+routerAdd("POST", "/api/profissionais/:id/sync-subconta", handleSyncProfissionalSubconta);
+routerAdd("POST", "/api/profissionais/{id}/sync-subconta", handleSyncProfissionalSubconta);

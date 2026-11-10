@@ -263,6 +263,11 @@ app.patch('/api/admin/tenants/:id/toggle-status', requireSuperUser, async (req, 
 // ============================================================
 app.post('/api/tenants/:id/sync-asaas', async (req, res) => {
   const { id } = req.params;
+
+  if (!id || id === 'undefined' || id === 'null') {
+    return res.status(400).json({ error: 'ID do tenant/barbearia não foi informado ou é inválido.' });
+  }
+
   const asaasKey = process.env.ASAAS_API_KEY || process.env.VITE_ASAAS_API_KEY || '';
   const asaasUrl = process.env.ASAAS_API_URL || 'https://api.asaas.com/v3';
 
@@ -274,7 +279,8 @@ app.post('/api/tenants/:id/sync-asaas', async (req, res) => {
 
   try {
     const tenant = await pb.collection('barbearias').getOne(id);
-    const nomeComprador = tenant.proprietario || tenant.nome_proprietario || tenant.nome;
+    const asaasIdAtual = tenant.asaas_id || tenant.asaas_customer_id || '';
+    const nomeComprador = tenant.proprietario || tenant.nome_proprietario || tenant.nome || 'Cliente Naville';
     const email = tenant.email_dono || tenant.email || `${tenant.slug}@navillebarber.com`;
     let doc = (tenant.documento || tenant.cpf_cnpj || tenant.cnpj || '').replace(/\D/g, '');
 
@@ -286,7 +292,12 @@ app.post('/api/tenants/:id/sync-asaas', async (req, res) => {
       payload.cpfCnpj = doc;
     }
 
-    const asaasResponse = await fetch(`${asaasUrl}/customers`, {
+    // Se NÃO possui ID prévio gravado, NUNCA tenta GET: cria diretamente via POST /customers
+    const endpoint = asaasIdAtual
+      ? `${asaasUrl}/customers/${encodeURIComponent(asaasIdAtual)}`
+      : `${asaasUrl}/customers`;
+
+    const asaasResponse = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -302,7 +313,7 @@ app.post('/api/tenants/:id/sync-asaas', async (req, res) => {
       return res.status(asaasResponse.status).json({ error: errMsg });
     }
 
-    const customerId = asaasData.id;
+    const customerId = asaasData.id || asaasIdAtual;
     await pb.collection('barbearias').update(id, {
       asaas_id: customerId
     });

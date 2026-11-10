@@ -426,8 +426,8 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
   // Salvar Configuração de Repasse Bancário e Provisionar Subconta no Asaas
   const handleSalvarRepasse = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!selectedTenant) {
-      dispararToast('erro', 'Nenhuma barbearia selecionada.', 'Erro');
+    if (!selectedTenant || !selectedTenant.id || typeof selectedTenant.id !== 'string' || !selectedTenant.id.trim()) {
+      dispararToast('aviso', 'Cadastre e salve os dados da barbearia antes de sincronizar com o Asaas.', 'Atenção');
       return;
     }
 
@@ -725,7 +725,10 @@ export default function SplitPaymentView({ tenant: initialTenant, onUpdateTenant
   // Processar criação / sincronização da subconta no Asaas
   const handleConfirmarSubconta = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedProf || !selectedTenant) return;
+    if (!selectedProf || !selectedProf.id || !selectedTenant) {
+      setSubcontaFeedback({ tipo: 'err', msg: 'Selecione um profissional salvo no sistema antes de gerar a subconta.' });
+      return;
+    }
 
     if (!subCpf || subCpf.replace(/\D/g, '').length < 11) {
       setSubcontaFeedback({ tipo: 'err', msg: 'Informe um CPF ou CNPJ válido.' });

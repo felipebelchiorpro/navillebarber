@@ -63,6 +63,26 @@ export default function SuperAdminLojasView() {
   const [syncing, setSyncing] = useState(false);
   const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
 
+  // Toast Flutuante de Feedback Visual Amigável
+  const [toast, setToast] = useState<{
+    id: string;
+    tipo: 'sucesso' | 'erro' | 'aviso' | 'info';
+    titulo?: string;
+    mensagem: string;
+  } | null>(null);
+
+  const dispararToast = (tipo: 'sucesso' | 'erro' | 'aviso' | 'info', mensagem: string, titulo?: string) => {
+    setToast({
+      id: Math.random().toString(),
+      tipo,
+      titulo,
+      mensagem,
+    });
+    setTimeout(() => {
+      setToast((prev) => (prev?.mensagem === mensagem ? null : prev));
+    }, 4500);
+  };
+
   // Estados para Emissão de Cobrança / Assinatura Asaas
   const [isCobrancaModalOpen, setIsCobrancaModalOpen] = useState(false);
   const [modalidadeCobranca, setModalidadeCobranca] = useState<'avulsa' | 'recorrente'>('avulsa');
@@ -126,7 +146,7 @@ export default function SuperAdminLojasView() {
       setTimeout(() => setSaveFeedback(''), 4500);
     } catch (error: any) {
       console.error('Erro ao resetar Asaas:', error);
-      alert('Falha ao resetar vínculo do Asaas.');
+      dispararToast('erro', 'Falha ao resetar vínculo do Asaas.', 'Erro');
     } finally {
       setSyncing(false);
     }
@@ -198,7 +218,7 @@ export default function SuperAdminLojasView() {
       setTimeout(() => setSaveFeedback(''), 2500);
     } catch (err) {
       console.error(`Erro ao atualizar ${field}:`, err);
-      alert('Erro ao salvar alteração no PocketBase.');
+      dispararToast('erro', 'Erro ao salvar alteração no PocketBase.', 'PocketBase');
     } finally {
       setSaving(false);
     }
@@ -215,7 +235,7 @@ export default function SuperAdminLojasView() {
       setTimeout(() => setSaveFeedback(''), 2500);
     } catch (err) {
       console.error('Erro ao salvar múltiplos campos:', err);
-      alert('Erro ao salvar alterações no PocketBase.');
+      dispararToast('erro', 'Erro ao salvar alterações no PocketBase.', 'PocketBase');
     } finally {
       setSaving(false);
     }
@@ -252,24 +272,34 @@ export default function SuperAdminLojasView() {
   };
 
   const handleSyncAsaas = async () => {
-    if (!selectedTenant) return;
+    // 1. Validação estrita do ID do Tenant / Barbearia
+    if (!selectedTenant || !selectedTenant.id || typeof selectedTenant.id !== 'string' || !selectedTenant.id.trim()) {
+      dispararToast('aviso', 'Cadastre e salve os dados da barbearia antes de sincronizar com o Asaas.', 'Atenção');
+      return;
+    }
+
     setSyncing(true);
     try {
-      // 1. Dispara a sincronização via backend seguro (POST /api/tenants/:id/sync-asaas)
-      // O backend lê process.env.ASAAS_API_KEY no servidor e cadastra o cliente oficial no Asaas
+      // 2. Dispara a sincronização com fallback inteligente automático
       const data = await sincronizarTenantNoBackend(selectedTenant.id);
 
       const asaasIdGerado = data.asaas_id || data.id;
 
-      // 2. Atualiza os estados locais imediatamente
+      // 3. Atualiza os estados locais imediatamente
       const tenantAtualizado = { ...selectedTenant, asaas_id: asaasIdGerado };
       setSelectedTenant(tenantAtualizado);
       setBarbearias((prev) => prev.map((b) => (b.id === tenantAtualizado.id ? tenantAtualizado : b)));
-      setSaveFeedback('Cliente sincronizado no Asaas Produção com sucesso!');
-      setTimeout(() => setSaveFeedback(''), 3500);
+      dispararToast('sucesso', `Cliente sincronizado com sucesso no Asaas Produção! ID: ${asaasIdGerado}`, 'Asaas Conectado');
     } catch (error: any) {
-      console.error('Erro ao sincronizar com Asaas no backend:', error);
-      alert(error.message || 'Falha ao sincronizar cliente no Asaas.');
+      console.error('[SYNC TENANT ERROR]', { erro: error, tenant: selectedTenant });
+      const msgErro = error?.message || 'Falha ao sincronizar cliente no Asaas.';
+      let tituloErro = 'Erro ao Sincronizar com Asaas';
+      if (msgErro.toLowerCase().includes('pocketbase') || msgErro.toLowerCase().includes('não localizada')) {
+        tituloErro = 'Erro no PocketBase';
+      } else if (msgErro.toLowerCase().includes('cpf') || msgErro.toLowerCase().includes('cnpj') || msgErro.toLowerCase().includes('asaas')) {
+        tituloErro = 'Erro no Asaas';
+      }
+      dispararToast('erro', msgErro, tituloErro);
     } finally {
       setSyncing(false);
     }
@@ -334,7 +364,7 @@ export default function SuperAdminLojasView() {
       setIsEditCompradorOpen(false);
     } catch (err: any) {
       console.error('Erro ao atualizar comprador:', err);
-      alert(err.message || 'Falha ao atualizar dados do comprador.');
+      dispararToast('erro', err.message || 'Falha ao atualizar dados do comprador.', 'Erro no Asaas');
     } finally {
       setSavingComprador(false);
     }
@@ -443,7 +473,7 @@ export default function SuperAdminLojasView() {
       setTimeout(() => setSaveFeedback(''), 3000);
     } catch (err: any) {
       console.error('Erro ao atualizar vencimento:', err);
-      alert(err.message || 'Falha ao alterar vencimento no Asaas.');
+      dispararToast('erro', err.message || 'Falha ao alterar vencimento no Asaas.', 'Erro no Asaas');
     } finally {
       setSavingVencimento(false);
     }
@@ -451,15 +481,15 @@ export default function SuperAdminLojasView() {
 
   const handleCriarCobrancaAsaasSubmit = async () => {
     if (!selectedTenant?.asaas_id) {
-      alert('Esta barbearia ainda não tem ID Asaas. Sincronize o cliente primeiro.');
+      dispararToast('aviso', 'Esta barbearia ainda não tem ID Asaas. Sincronize o cliente primeiro.', 'Atenção');
       return;
     }
     if (!valorCobranca || valorCobranca <= 0) {
-      alert('Informe um valor válido para a cobrança.');
+      dispararToast('aviso', 'Informe um valor válido para a cobrança.', 'Atenção');
       return;
     }
     if (!vencimentoCobranca) {
-      alert('Informe uma data de vencimento válida.');
+      dispararToast('aviso', 'Informe uma data de vencimento válida.', 'Atenção');
       return;
     }
 
@@ -511,9 +541,10 @@ export default function SuperAdminLojasView() {
 
       setSaveFeedback('Cobrança emitida e vinculada ao painel da barbearia!');
       setTimeout(() => setSaveFeedback(''), 4000);
+      dispararToast('sucesso', 'Cobrança emitida e vinculada ao painel da barbearia!', 'Cobrança Criada');
     } catch (err: any) {
       console.error('Erro ao emitir cobrança:', err);
-      alert(err.message || 'Falha ao emitir cobrança no Asaas.');
+      dispararToast('erro', err.message || 'Falha ao emitir cobrança no Asaas.', 'Erro no Asaas');
     } finally {
       setLoadingCobranca(false);
     }
@@ -521,7 +552,7 @@ export default function SuperAdminLojasView() {
 
   const handleAbrirHistoricoAsaas = async () => {
     if (!selectedTenant?.asaas_id) {
-      alert('Esta barbearia ainda não possui ID no Asaas.');
+      dispararToast('aviso', 'Esta barbearia ainda não possui ID no Asaas.', 'Atenção');
       return;
     }
     setIsHistoricoModalOpen(true);
@@ -531,7 +562,7 @@ export default function SuperAdminLojasView() {
       setHistoricoCobrancas(lista);
     } catch (err: any) {
       console.error('Erro ao listar histórico do Asaas:', err);
-      alert(err.message || 'Não foi possível carregar o histórico do Asaas.');
+      dispararToast('erro', err.message || 'Não foi possível carregar o histórico do Asaas.', 'Erro no Asaas');
     } finally {
       setLoadingHistorico(false);
     }
@@ -572,9 +603,10 @@ export default function SuperAdminLojasView() {
 
       setSaveFeedback(`Sincronização concluída! ${novos} nova(s) fatura(s) adicionada(s) ao painel da barbearia.`);
       setTimeout(() => setSaveFeedback(''), 4000);
+      dispararToast('sucesso', `${novos} nova(s) fatura(s) sincronizada(s) no PocketBase!`, 'Faturas Sincronizadas');
     } catch (err: any) {
       console.error('Erro ao sincronizar histórico com PocketBase:', err);
-      alert('Erro ao sincronizar faturas com o banco local.');
+      dispararToast('erro', 'Erro ao sincronizar faturas com o banco local.', 'PocketBase');
     } finally {
       setSyncingFaturasPB(false);
     }
@@ -1933,6 +1965,42 @@ export default function SuperAdminLojasView() {
               }}
               onClose={() => setIsSplitModalOpen(false)}
             />
+          </div>
+        </div>
+      )}
+      {/* TOAST FLUTUANTE DE NOTIFICAÇÕES */}
+      {toast && (
+        <div className="fixed top-5 right-5 z-50 max-w-sm sm:max-w-md w-full animate-in slide-in-from-top-4 fade-in duration-300">
+          <div
+            className={`p-4 rounded-xl border backdrop-blur-xl shadow-2xl flex items-start gap-3 ${
+              toast.tipo === 'sucesso'
+                ? 'bg-emerald-950/95 border-emerald-500/40 text-emerald-200'
+                : toast.tipo === 'erro'
+                ? 'bg-rose-950/95 border-rose-500/40 text-rose-200'
+                : toast.tipo === 'aviso'
+                ? 'bg-amber-950/95 border-amber-500/40 text-amber-200'
+                : 'bg-blue-950/95 border-blue-500/40 text-blue-200'
+            }`}
+          >
+            <div className="mt-0.5 shrink-0">
+              {toast.tipo === 'sucesso' && <CheckCircle2 size={18} className="text-emerald-400" />}
+              {toast.tipo === 'erro' && <AlertCircle size={18} className="text-rose-400" />}
+              {toast.tipo === 'aviso' && <AlertCircle size={18} className="text-amber-400" />}
+              {toast.tipo === 'info' && <AlertCircle size={18} className="text-blue-400" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              {toast.titulo && (
+                <h5 className="text-xs font-bold uppercase tracking-wider mb-0.5">{toast.titulo}</h5>
+              )}
+              <p className="text-xs font-normal leading-relaxed">{toast.mensagem}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToast(null)}
+              className="p-1 rounded-lg hover:bg-white/10 text-white/60 hover:text-white transition-colors cursor-pointer"
+            >
+              <X size={14} />
+            </button>
           </div>
         </div>
       )}
