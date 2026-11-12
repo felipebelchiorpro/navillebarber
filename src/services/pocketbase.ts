@@ -1,4 +1,5 @@
 import PocketBase from 'pocketbase';
+import { evolutionApi } from './evolutionApi';
 
 export const POCKETBASE_URL =
   (import.meta as any).env?.VITE_POCKETBASE_URL ||
@@ -472,7 +473,10 @@ export const barbeariasService = {
    * Cria uma nova barbearia no PocketBase
    */
   async create(data: Partial<Barbearia>): Promise<Barbearia> {
-    return await pb.collection('barbearias').create<Barbearia>(data);
+    const created = await pb.collection('barbearias').create<Barbearia>(data);
+    // Provisiona instância Evolution + templates pré-definidos automaticamente no backend
+    evolutionApi.seedTenant(created.id).catch(() => {});
+    return created;
   },
 
   /**
@@ -638,9 +642,11 @@ export const agendamentosService = {
     status: 'pendente' | 'confirmado' | 'concluido' | 'cancelado';
     observacoes?: string;
   }): Promise<Agendamento> {
-    return await pb.collection('agendamentos').create<Agendamento>(data, {
+    const created = await pb.collection('agendamentos').create<Agendamento>(data, {
       expand: 'barbeiro_id,barbearia_id',
     });
+    evolutionApi.notifyAgendamento(created.id, 'confirmacao_agendamento').catch(() => {});
+    return created;
   },
 
   async update(id: string, data: Partial<Agendamento>): Promise<Agendamento> {
@@ -650,9 +656,13 @@ export const agendamentosService = {
   },
 
   async updateStatus(id: string, status: Agendamento['status']): Promise<Agendamento> {
-    return await pb.collection('agendamentos').update<Agendamento>(id, { status }, {
+    const updated = await pb.collection('agendamentos').update<Agendamento>(id, { status }, {
       expand: 'barbeiro_id,barbearia_id',
     });
+    if (status === 'cancelado') {
+      evolutionApi.notifyAgendamento(id, 'cancelamento_agendamento').catch(() => {});
+    }
+    return updated;
   },
 
   async delete(id: string): Promise<boolean> {

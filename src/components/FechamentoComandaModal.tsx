@@ -36,6 +36,7 @@ import {
   clientesService,
   planosService,
 } from '../services/pocketbase';
+import { evolutionApi } from '../services/evolutionApi';
 
 export interface ItemServicoComanda extends ItemServicoVenda {
   precoOriginal?: number;
@@ -460,6 +461,10 @@ export const FechamentoComandaModal: React.FC<FechamentoComandaModalProps> = ({
       });
 
       setVendaFinalizada(venda);
+
+      if (formaPagamento === 'pix' && agendamento?.id) {
+        evolutionApi.notifyAgendamento(agendamento.id, 'pagamento_pix_confirmado').catch(() => {});
+      }
 
       // Incrementa cortes_utilizados_mes na coleção 'clientes' se houver serviço coberto pelo plano VIP
       const teveCorteVip = selectedServices.some((s) => s.cobertoVip);

@@ -5,6 +5,21 @@ import PocketBase from 'pocketbase';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import {
+  getEvolutionConfig,
+  extractEvolutionOverride,
+  getInstanceName,
+  createEvolutionInstance,
+  getEvolutionQRCode,
+  getEvolutionConnectionState,
+  fetchEvolutionInstanceInfo,
+  logoutEvolutionInstance,
+  sendEvolutionText,
+  ensureTenantWhatsAppSetup,
+  notifyAgendamentoWhatsApp,
+  logWhatsAppHistory,
+  startWhatsAppScheduler
+} from './whatsapp_engine.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -755,6 +770,166 @@ app.post('/api/profissionais', async (req, res) => {
 });
 
 // ============================================================
+// 4.5. ROTAS SEGURAS WHATSAPP / EVOLUTION API v2
+// ============================================================
+
+// Verifica se EVOLUTION_API_URL e EVOLUTION_API_KEY estão configuradas no servidor (sem expor a chave)
+app.get('/api/whatsapp/config-status', (req, res) => {
+  const cfg = getEvolutionConfig();
+  return res.json({
+    configured: cfg.isConfigured,
+    hasServerEnv: cfg.hasServerEnv,
+    apiUrl: cfg.apiUrl ? cfg.apiUrl.replace(/(https?:\/\/[^/]+).*/, '$1') : ''
+  });
+});
+
+// Provisiona instância Evolution + templates pré-definidos para uma barbearia
+app.post('/api/whatsapp/seed-tenant', async (req, res) => {
+  const barbeariaId = req.body?.barbeariaId || req.body?.tenantId;
+  if (!barbeariaId) {
+    return res.status(400).json({ error: 'barbeariaId é obrigatório.' });
+  }
+  try {
+    const cfg = extractEvolutionOverride(req);
+    const result = await ensureTenantWhatsAppSetup(pb, barbeariaId, cfg);
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('Erro em /api/whatsapp/seed-tenant:', err);
+    return res.status(500).json({ error: err.message || 'Falha ao preparar WhatsApp da barbearia.' });
+  }
+});
+
+// Cria ou valida instância na Evolution API
+app.post('/api/whatsapp/instances/create', async (req, res) => {
+  const cfg = extractEvolutionOverride(req);
+  if (!cfg.isConfigured) {
+    return res.status(400).json({ error: 'Evolution API não configurada no servidor (EVOLUTION_API_URL / EVOLUTION_API_KEY).' });
+  }
+
+  try {
+    const { barbeariaId, instanceName: rawName } = req.body || {};
+    if (barbeariaId) {
+      const setup = await ensureTenantWhatsAppSetup(pb, barbeariaId, cfg);
+      if (!setup.instanceResult?.success) {
+        return res.status(400).json({ error: setup.instanceResult?.error || 'Falha ao criar instância.' });
+      }
+      return res.json({ success: true, instanceName: setup.instanceName, data: setup.instanceResult.data });
+    }
+
+    if (!rawName) {
+      return res.status(400).json({ error: 'Informe barbeariaId ou instanceName.' });
+    }
+    const result = await createEvolutionInstance(rawName, cfg);
+    return res.status(result.success ? 200 : 400).json(result);
+  } catch (err) {
+    console.error('Erro ao criar instância Evolution:', err);
+    return res.status(500).json({ error: err.message || 'Erro interno na Evolution API.' });
+  }
+});
+
+// Gera/obtém QR Code oficial para conectar WhatsApp da barbearia
+app.get('/api/whatsapp/instances/:instanceName/qrcode', async (req, res) => {
+  const cfg = extractEvolutionOverride(req);
+  const result = await getEvolutionQRCode(req.params.instanceName, cfg);
+  return res.status(result.success ? 200 : 400).json(result);
+});
+
+// Consulta status da conexão ('open' | 'connecting' | 'close') e número conectado
+app.get('/api/whatsapp/instances/:instanceName/state', async (req, res) => {
+  const cfg = extractEvolutionOverride(req);
+  const { instanceName } = req.params;
+  const stateRes = await getEvolutionConnectionState(instanceName, cfg);
+  let info = {};
+  if (stateRes.state === 'open') {
+    info = await fetchEvolutionInstanceInfo(instanceName, cfg);
+    if (req.query?.barbeariaId) {
+      pb.collection('barbearias')
+        .update(String(req.query.barbeariaId), {
+          whatsapp_status: 'conectado',
+          whatsapp_numero: info.phone || undefined
+        })
+        .catch(() => {});
+    }
+  }
+  return res.json({ ...stateRes, ...info });
+});
+
+// Desconecta (logout) a instância da barbearia
+app.delete('/api/whatsapp/instances/:instanceName/logout', async (req, res) => {
+  const cfg = extractEvolutionOverride(req);
+  const ok = await logoutEvolutionInstance(req.params.instanceName, cfg);
+  if (req.query?.barbeariaId) {
+    pb.collection('barbearias')
+      .update(String(req.query.barbeariaId), { whatsapp_status: 'desconectado', whatsapp_numero: '' })
+      .catch(() => {});
+  }
+  return res.json({ success: ok });
+});
+
+// Envio direto de mensagem de texto via backend (usado em testes manuais e disparos avulsos)
+app.post('/api/whatsapp/send', async (req, res) => {
+  const cfg = extractEvolutionOverride(req);
+  const { barbeariaId, instanceName: rawInstance, number, text, destinatario_nome, tipo_gatilho, template_id, agendamento_id, cliente_id, skipHistory } = req.body || {};
+
+  if (!number || !text) {
+    return res.status(400).json({ error: 'Número e texto são obrigatórios.' });
+  }
+
+  let instanceName = rawInstance;
+  if (!instanceName && barbeariaId) {
+    try {
+      const barb = await pb.collection('barbearias').getOne(barbeariaId);
+      instanceName = getInstanceName(barb.id, barb.slug);
+    } catch {
+      instanceName = getInstanceName(barbeariaId);
+    }
+  }
+
+  if (!instanceName) {
+    return res.status(400).json({ error: 'Instância ou barbeariaId não informado.' });
+  }
+
+  const sendRes = await sendEvolutionText(instanceName, number, text, cfg);
+
+  let historico = null;
+  if (!skipHistory && barbeariaId) {
+    historico = await logWhatsAppHistory(pb, {
+      barbearia_id: barbeariaId,
+      destinatario_nome: destinatario_nome || 'Cliente',
+      destinatario_telefone: number,
+      tipo_gatilho: tipo_gatilho || 'avulso',
+      mensagem: text,
+      status: sendRes.success ? 'entregue' : 'falha',
+      template_id,
+      agendamento_id,
+      cliente_id,
+      erro_detalhe: sendRes.error
+    });
+  }
+
+  return res.status(sendRes.success ? 200 : 400).json({
+    ...sendRes,
+    historico
+  });
+});
+
+// Dispara notificação automática formatada com o template da barbearia para um agendamento
+app.post('/api/whatsapp/notify-agendamento', async (req, res) => {
+  const { agendamentoId, tipo_gatilho, extraVars } = req.body || {};
+  if (!agendamentoId || !tipo_gatilho) {
+    return res.status(400).json({ error: 'agendamentoId e tipo_gatilho são obrigatórios.' });
+  }
+  try {
+    const cfg = extractEvolutionOverride(req);
+    const result = await notifyAgendamentoWhatsApp(pb, agendamentoId, tipo_gatilho, extraVars || {}, cfg);
+    return res.json(result);
+  } catch (err) {
+    console.error('Erro em /api/whatsapp/notify-agendamento:', err);
+    return res.status(500).json({ error: err.message || 'Falha ao notificar agendamento.' });
+  }
+});
+
+// ============================================================
 // 5. PROXY POCKETBASE & SPA FALLBACK
 // ============================================================
 app.use(['/api/collections', '/api/files', '/api/health', '/api/settings', '/api/batch', '/_'], async (req, res) => {
@@ -806,6 +981,7 @@ app.use((req, res) => {
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`[SuperAdmin Server] Rodando em http://localhost:${PORT}`);
+    startWhatsAppScheduler(pb);
   });
 }
 

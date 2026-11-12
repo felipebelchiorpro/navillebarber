@@ -17,6 +17,7 @@ import {
   Lock
 } from 'lucide-react';
 import { pb, TerminalPagamento, Barbearia } from '../services/pocketbase';
+import { evolutionApi } from '../services/evolutionApi';
 
 export default function TerminalMaquininhaPWAView() {
   const { codigo: paramCodigo } = useParams<{ codigo?: string }>();
@@ -150,6 +151,9 @@ export default function TerminalMaquininhaPWAView() {
             status_pagamento: 'pago',
             metodo_pagamento: metodoSelecionado === 'pix' ? 'pix' : 'cartao_maquininha',
           }).catch(() => {});
+          if (metodoSelecionado === 'pix') {
+            evolutionApi.notifyAgendamento(terminal.cobranca_ativa, 'pagamento_pix_confirmado').catch(() => {});
+          }
         }
 
         // Libera o terminal

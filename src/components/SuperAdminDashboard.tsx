@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { TrendingUp, BarChart3, Activity, Plus, X } from 'lucide-react';
 import { pb } from '../lib/pocketbase';
+import { evolutionApi } from '../services/evolutionApi';
 
 export default function SuperAdminDashboard() {
   const [barbearias, setBarbearias] = useState<any[]>([]);
@@ -70,6 +71,7 @@ export default function SuperAdminDashboard() {
         pix_chave_repasse: '',
         banco_nome: 'Nubank',
       });
+      evolutionApi.seedTenant(novaBarbearia.id).catch(() => {});
       setBarbearias([novaBarbearia, ...barbearias]);
       setIsModalOpen(false);
       // Limpa os campos

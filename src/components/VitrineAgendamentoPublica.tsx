@@ -61,8 +61,7 @@ import {
   planosService,
   clubePlanosService,
   clubeMembrosService,
-  validarElegibilidadeVip,
-  whatsappService
+  validarElegibilidadeVip
 } from '../services/pocketbase';
 import {
   validateContiguousSlots,
@@ -863,32 +862,7 @@ export const VitrineAgendamentoPublica: React.FC<VitrineAgendamentoPublicaProps>
         observacoes: obsFinal
       });
 
-      // Registro no Histórico WhatsApp
-      try {
-        const dataFormatada = selectedDate.split('-').reverse().join('/');
-        const textoMsg = `✂️ *Confirmação de Agendamento — ${barbearia.nome}*\n\n` +
-          `Olá, *${clienteNome.trim()}*!\n` +
-          `Seu agendamento foi registrado com sucesso!\n\n` +
-          `📅 *Data:* ${dataFormatada}\n` +
-          `⏰ *Horário:* ${selectedHorario} às ${minutesToTime(timeToMinutes(selectedHorario) + duracaoTotalMinutos)}\n` +
-          `💈 *Profissional:* ${barbeiroEfetivo.nome}${barbeiroEfetivo.apelido ? ` (${barbeiroEfetivo.apelido})` : ''}\n` +
-          `💇 *Serviços:* ${servicosNomes.join(', ')}\n` +
-          `💰 *Total:* ${valorFinal === 0 ? 'R$ 0,00 (Coberto pelo Clube VIP)' : `R$ ${valorFinal.toFixed(2)}`}\n\n` +
-          `Esperamos você! Se precisar avisar algo, responda a esta mensagem.`;
-
-        await whatsappService.registrarEnvio({
-          barbearia_id: barbearia.id,
-          destinatario_nome: clienteNome.trim(),
-          destinatario_telefone: clienteTelefone.trim(),
-          tipo_gatilho: 'confirmacao_agendamento',
-          mensagem: textoMsg,
-          status: 'entregue',
-          agendamento_id: novoAgendamento.id,
-          cliente_id: clienteVip?.id
-        });
-      } catch (errWa) {
-        console.warn('Registro WhatsApp secundário:', errWa);
-      }
+      // A confirmação via WhatsApp (Evolution API + histórico) é disparada automaticamente em agendamentosService.create
 
       // Base de clientes
       try {

@@ -17,6 +17,9 @@ services:
       - ASAAS_API_URL=${ASAAS_API_URL:-https://api.asaas.com/v3}
       - ASAAS_MASTER_WALLET_ID=${ASAAS_MASTER_WALLET_ID}
       - ASAAS_WEBHOOK_SECRET=${ASAAS_WEBHOOK_SECRET}
+      - EVOLUTION_API_URL=${EVOLUTION_API_URL:-}
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-https://app.navillebarber.pro}
       - POCKETBASE_URL=http://pocketbase:8090
     depends_on:
       - pocketbase

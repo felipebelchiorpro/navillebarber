@@ -164,7 +164,8 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({
   // Carrega templates, histórico e clientes da barbearia
   const loadData = async () => {
     try {
-      const [tpls, hist, clis] = await Promise.all([
+      const serverCfg = await evolutionApi.checkServerConfig();
+      let [tpls, hist, clis] = await Promise.all([
         whatsappService.listTemplates(barbearia.id).catch((err) => {
           console.warn('Falha controlada ao listar templates WhatsApp:', err);
           return [] as TemplateMensagem[];
@@ -178,6 +179,13 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({
           return [] as Cliente[];
         })
       ]);
+
+      // Se a barbearia ainda não possui templates semeados, provisiona automaticamente via backend
+      if (tpls.length === 0) {
+        await evolutionApi.seedTenant(barbearia.id).catch(() => {});
+        tpls = await whatsappService.listTemplates(barbearia.id).catch(() => [] as TemplateMensagem[]);
+      }
+
       setTemplates(tpls);
       setHistorico(hist);
       setClientesList(clis);
@@ -187,6 +195,15 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({
         setEditingTitulo(tpls[0].titulo);
         setEditingConteudo(tpls[0].conteudo);
         setEditingAtivo(tpls[0].ativo);
+      }
+
+      // Sincroniza estado real da instância na Evolution API caso o servidor esteja configurado
+      if (serverCfg.configured || evolutionApi.getConfig().isConfigured) {
+        const liveState = await evolutionApi.getConnectionState(instanceName, barbearia.id);
+        if (liveState.state === 'open') {
+          setConnectionStatus('conectado');
+          if (liveState.phone) setConnectedNumber(liveState.phone);
+        }
       }
     } catch (err) {
       console.error('Erro ao carregar dados do WhatsApp:', err);
@@ -201,6 +218,7 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({
 
   // Busca o QR Code oficial da Evolution API
   const fetchOfficialQRCode = async () => {
+    await evolutionApi.checkServerConfig();
     const config = evolutionApi.getConfig();
     if (!config.isConfigured) {
       setQrErrorMessage('A Evolution API ainda não foi configurada. Informe a URL e Chave da API.');
@@ -283,7 +301,8 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({
   }, [connectionStatus, instanceName, barbearia.id, connectedNumber, onBarbeariaUpdated]);
 
   // Ações de Conexão / Emparelhamento
-  const handleStartPairing = () => {
+  const handleStartPairing = async () => {
+    await evolutionApi.checkServerConfig();
     const config = evolutionApi.getConfig();
     if (!config.isConfigured) {
       setIsConfigModalOpen(true);
@@ -299,7 +318,7 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({
       return;
     }
     try {
-      await evolutionApi.logoutInstance(instanceName);
+      await evolutionApi.logoutInstance(instanceName, barbearia.id);
       const updated = await whatsappService.updateStatusConexao(barbearia.id, 'desconectado', '');
       setConnectionStatus('desconectado');
       setRealQrCodeBase64(null);
@@ -513,7 +532,8 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({
         const sendResult = await evolutionApi.sendTextMessage(
           instanceName,
           testTelefone.trim(),
-          testMensagemCustom.trim()
+          testMensagemCustom.trim(),
+          { barbeariaId: barbearia.id, skipHistory: true }
         );
 
         if (sendResult.success) {

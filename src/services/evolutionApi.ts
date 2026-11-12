@@ -1,14 +1,14 @@
 /**
  * Serviço de Integração Oficial com o WhatsApp via Evolution API v2
- * Suporta instâncias isoladas por barbearia (Multi-tenant),
- * geração de QR Code real, código de pareamento, verificação de status
- * e envio de mensagens de texto com registro de histórico.
+ * Opera via rotas seguras do backend (/api/whatsapp/*) protegendo a API Key no servidor,
+ * com suporte opcional a credenciais customizadas no localStorage (para testes/desenvolvimento).
  */
 
 export interface EvolutionConfig {
   apiUrl: string;
   apiKey: string;
   isConfigured: boolean;
+  hasServerEnv?: boolean;
 }
 
 export interface EvolutionQRResponse {
@@ -21,14 +21,35 @@ export interface EvolutionQRResponse {
 export interface EvolutionConnectionState {
   state: 'open' | 'close' | 'connecting';
   instanceName?: string;
+  phone?: string;
+  profileName?: string;
 }
 
 const STORAGE_KEY_URL = 'naville_evolution_api_url';
 const STORAGE_KEY_KEY = 'naville_evolution_api_key';
 
+let cachedServerStatus: { configured: boolean; hasServerEnv: boolean; apiUrl?: string } | null = null;
+
 export const evolutionApi = {
   /**
-   * Obtém as configurações salvas (priorizando localStorage e depois .env)
+   * Consulta o backend para saber se EVOLUTION_API_URL e EVOLUTION_API_KEY já estão ativas no servidor
+   */
+  async checkServerConfig(): Promise<{ configured: boolean; hasServerEnv: boolean; apiUrl?: string }> {
+    try {
+      const res = await fetch('/api/whatsapp/config-status');
+      if (res.ok) {
+        const data = await res.json();
+        cachedServerStatus = data;
+        return data;
+      }
+    } catch {
+      // Fallback silencioso caso o servidor Node não esteja ativo em ambiente puramente estático
+    }
+    return { configured: false, hasServerEnv: false };
+  },
+
+  /**
+   * Obtém as configurações salvas (localStorage, .env do Vite ou status do servidor)
    */
   getConfig(): EvolutionConfig {
     const storedUrl = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_URL) : null;
@@ -37,37 +58,43 @@ export const evolutionApi = {
     const envUrl = (import.meta as any).env?.VITE_EVOLUTION_API_URL || '';
     const envKey = (import.meta as any).env?.VITE_EVOLUTION_API_KEY || '';
 
-    const apiUrl = (storedUrl || envUrl || '').trim().replace(/\/+$/, '');
+    const apiUrl = (storedUrl || envUrl || cachedServerStatus?.apiUrl || '').trim().replace(/\/+$/, '');
     const apiKey = (storedKey || envKey || '').trim();
 
     return {
       apiUrl,
       apiKey,
-      isConfigured: Boolean(apiUrl && apiKey)
+      hasServerEnv: Boolean(cachedServerStatus?.hasServerEnv),
+      isConfigured: Boolean(cachedServerStatus?.configured || (apiUrl && apiKey))
     };
   },
 
   /**
-   * Salva as configurações de conexão da Evolution API
+   * Salva configurações customizadas opcionais no navegador
    */
   saveConfig(apiUrl: string, apiKey: string) {
     const cleanUrl = apiUrl.trim().replace(/\/+$/, '');
     const cleanKey = apiKey.trim();
     if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY_URL, cleanUrl);
-      localStorage.setItem(STORAGE_KEY_KEY, cleanKey);
+      if (cleanUrl) localStorage.setItem(STORAGE_KEY_URL, cleanUrl);
+      else localStorage.removeItem(STORAGE_KEY_URL);
+      if (cleanKey) localStorage.setItem(STORAGE_KEY_KEY, cleanKey);
+      else localStorage.removeItem(STORAGE_KEY_KEY);
     }
   },
 
   /**
-   * Helper para montar headers com autenticação
+   * Monta headers para o backend (anexando override apenas se configurado no navegador)
    */
   getHeaders(): HeadersInit {
-    const { apiKey } = this.getConfig();
-    return {
-      'Content-Type': 'application/json',
-      apikey: apiKey
+    const storedUrl = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_URL) || '' : '';
+    const storedKey = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_KEY) || '' : '';
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
     };
+    if (storedUrl.trim()) headers['x-evolution-url'] = storedUrl.trim();
+    if (storedKey.trim()) headers['x-evolution-key'] = storedKey.trim();
+    return headers;
   },
 
   /**
@@ -80,82 +107,59 @@ export const evolutionApi = {
   },
 
   /**
-   * Cria ou valida a existência da instância no servidor Evolution API
+   * Provisiona instância + templates pré-definidos para uma barbearia recém-criada ou existente
    */
-  async createInstance(instanceName: string): Promise<{ success: boolean; data?: any; error?: string }> {
-    const { apiUrl, isConfigured } = this.getConfig();
-    if (!isConfigured) {
-      return { success: false, error: 'Evolution API não configurada. Defina a URL e API Key.' };
-    }
-
+  async seedTenant(barbeariaId: string): Promise<{ success: boolean; instanceName?: string; seededCount?: number; error?: string }> {
     try {
-      const res = await fetch(`${apiUrl}/instance/create`, {
+      const res = await fetch('/api/whatsapp/seed-tenant', {
         method: 'POST',
         headers: this.getHeaders(),
-        body: JSON.stringify({
-          instanceName,
-          token: `token_${instanceName}`,
-          qrcode: true,
-          integration: 'WHATSAPP-BAILEYS',
-          reject_call: false,
-          msg_call: 'Atendimento automatizado Naville Barber.',
-          groups_ignore: true,
-          always_online: true,
-          read_messages: false,
-          read_status: false
-        })
+        body: JSON.stringify({ barbeariaId })
       });
-
       const data = await res.json().catch(() => ({}));
-      // Se a instância já existe (403 ou instance already exists), consideramos sucesso para poder conectar
-      if (res.ok || res.status === 403 || String(data?.message || '').includes('already exists')) {
+      if (!res.ok) {
+        return { success: false, error: data?.error || `Erro HTTP ${res.status}` };
+      }
+      return data;
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Falha ao provisionar WhatsApp da barbearia.' };
+    }
+  },
+
+  /**
+   * Cria ou valida a existência da instância no servidor Evolution API (via backend seguro)
+   */
+  async createInstance(instanceName: string, barbeariaId?: string): Promise<{ success: boolean; data?: any; error?: string }> {
+    try {
+      const res = await fetch('/api/whatsapp/instances/create', {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ instanceName, barbeariaId })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.success !== false) {
         return { success: true, data };
       }
-
-      return { success: false, error: data?.message || data?.error || `Erro HTTP ${res.status}` };
+      return { success: false, error: data?.error || data?.message || `Erro HTTP ${res.status}` };
     } catch (err: any) {
       return { success: false, error: err?.message || 'Falha na conexão com o servidor Evolution API.' };
     }
   },
 
   /**
-   * Solicita o QR Code real de conexão do WhatsApp Web
+   * Solicita o QR Code real de conexão do WhatsApp Web (via backend seguro)
    */
   async getQRCode(instanceName: string): Promise<{ success: boolean; data?: EvolutionQRResponse; error?: string }> {
-    const { apiUrl, isConfigured } = this.getConfig();
-    if (!isConfigured) {
-      return { success: false, error: 'Evolution API não configurada.' };
-    }
-
-    // Garante que a instância foi criada antes
-    await this.createInstance(instanceName);
-
     try {
-      const res = await fetch(`${apiUrl}/instance/connect/${instanceName}`, {
+      const res = await fetch(`/api/whatsapp/instances/${encodeURIComponent(instanceName)}/qrcode`, {
         method: 'GET',
         headers: this.getHeaders()
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        return { success: false, error: data?.message || `Erro HTTP ${res.status}` };
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.success) {
+        return { success: true, data: data.data };
       }
-
-      // Normaliza retorno do base64 do QR Code (v1 vs v2)
-      let base64 = data.base64 || data.qrcode?.base64;
-      if (base64 && !base64.startsWith('data:image')) {
-        base64 = `data:image/png;base64,${base64}`;
-      }
-
-      return {
-        success: true,
-        data: {
-          base64,
-          code: data.code || data.qrcode?.code,
-          pairingCode: data.pairingCode || data.qrcode?.pairingCode,
-          count: data.count || 1
-        }
-      };
+      return { success: false, error: data?.error || data?.message || `Erro HTTP ${res.status}` };
     } catch (err: any) {
       return { success: false, error: err?.message || 'Erro ao conectar à instância do WhatsApp.' };
     }
@@ -164,121 +168,109 @@ export const evolutionApi = {
   /**
    * Consulta o estado atual da conexão da instância ('open', 'close', 'connecting')
    */
-  async getConnectionState(instanceName: string): Promise<EvolutionConnectionState> {
-    const { apiUrl, isConfigured } = this.getConfig();
-    if (!isConfigured) {
-      return { state: 'close', instanceName };
-    }
-
+  async getConnectionState(instanceName: string, barbeariaId?: string): Promise<EvolutionConnectionState> {
     try {
-      const res = await fetch(`${apiUrl}/instance/connectionState/${instanceName}`, {
+      const qs = barbeariaId ? `?barbeariaId=${encodeURIComponent(barbeariaId)}` : '';
+      const res = await fetch(`/api/whatsapp/instances/${encodeURIComponent(instanceName)}/state${qs}`, {
         method: 'GET',
         headers: this.getHeaders()
       });
-
       if (!res.ok) {
         return { state: 'close', instanceName };
       }
-
-      const data = await res.json();
-      const rawState = data.instance?.state || data.state || 'close';
-
-      return {
-        state: rawState === 'open' ? 'open' : rawState === 'connecting' ? 'connecting' : 'close',
-        instanceName
-      };
+      return await res.json();
     } catch {
       return { state: 'close', instanceName };
     }
   },
 
   /**
-   * Busca dados da instância conectada (como número do WhatsApp emparelhado e nome)
+   * Busca dados da instância conectada (reutilizando o endpoint de state/info do backend)
    */
   async fetchInstanceInfo(instanceName: string): Promise<{ phone?: string; profileName?: string }> {
-    const { apiUrl, isConfigured } = this.getConfig();
-    if (!isConfigured) return {};
-
-    try {
-      const res = await fetch(`${apiUrl}/instance/fetchInstances?instanceName=${instanceName}`, {
-        method: 'GET',
-        headers: this.getHeaders()
-      });
-
-      if (!res.ok) return {};
-      const data = await res.json();
-      const inst = Array.isArray(data) ? data.find((i: any) => i.name === instanceName || i.instanceName === instanceName) : data;
-
-      if (inst) {
-        const ownerJid = inst.owner || inst.ownerJid || inst.connectionStatus?.ownerJid || '';
-        const phone = ownerJid ? ownerJid.split('@')[0] : '';
-        const profileName = inst.profileName || inst.name || '';
-        return { phone, profileName };
-      }
-    } catch (e) {
-      console.warn('Não foi possível obter detalhes do perfil:', e);
-    }
-    return {};
+    const state = await this.getConnectionState(instanceName);
+    return { phone: state.phone, profileName: state.profileName };
   },
 
   /**
-   * Desconecta (Logout) e remove a sessão da instância
+   * Desconecta (Logout) a sessão da instância
    */
-  async logoutInstance(instanceName: string): Promise<boolean> {
-    const { apiUrl, isConfigured } = this.getConfig();
-    if (!isConfigured) return true;
-
+  async logoutInstance(instanceName: string, barbeariaId?: string): Promise<boolean> {
     try {
-      await fetch(`${apiUrl}/instance/logout/${instanceName}`, {
+      const qs = barbeariaId ? `?barbeariaId=${encodeURIComponent(barbeariaId)}` : '';
+      const res = await fetch(`/api/whatsapp/instances/${encodeURIComponent(instanceName)}/logout${qs}`, {
         method: 'DELETE',
         headers: this.getHeaders()
       });
-      return true;
+      return res.ok;
     } catch {
       return false;
     }
   },
 
   /**
-   * Envia uma mensagem de texto real via WhatsApp
+   * Envia uma mensagem de texto real via WhatsApp através do backend seguro
    */
   async sendTextMessage(
     instanceName: string,
     number: string,
-    text: string
-  ): Promise<{ success: boolean; data?: any; error?: string }> {
-    const { apiUrl, isConfigured } = this.getConfig();
-    if (!isConfigured) {
-      return { success: false, error: 'Servidor Evolution API não configurado.' };
+    text: string,
+    meta?: {
+      barbeariaId?: string;
+      destinatario_nome?: string;
+      tipo_gatilho?: string;
+      template_id?: string;
+      agendamento_id?: string;
+      cliente_id?: string;
+      skipHistory?: boolean;
     }
-
-    // Normaliza número brasileiro (apenas dígitos, garantindo DDI 55)
-    let cleanNumber = number.replace(/\D/g, '');
-    if (cleanNumber.length >= 10 && cleanNumber.length <= 11 && !cleanNumber.startsWith('55')) {
-      cleanNumber = `55${cleanNumber}`;
-    }
-
+  ): Promise<{ success: boolean; data?: any; historico?: any; error?: string }> {
     try {
-      const res = await fetch(`${apiUrl}/message/sendText/${instanceName}`, {
+      const res = await fetch('/api/whatsapp/send', {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify({
-          number: cleanNumber,
+          instanceName,
+          number,
           text,
-          delay: 1200, // Simulação anti-ban humana
-          linkPreview: false
+          skipHistory: meta?.skipHistory ?? true,
+          ...meta
         })
       });
-
       const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        return { success: true, data };
+      if (res.ok && data?.success) {
+        return { success: true, data: data.data, historico: data.historico };
       }
-
-      return { success: false, error: data?.message || data?.error || `Erro HTTP ${res.status}` };
+      return { success: false, error: data?.error || data?.message || `Erro HTTP ${res.status}` };
     } catch (err: any) {
       return { success: false, error: err?.message || 'Falha ao enviar mensagem via Evolution API.' };
     }
+  },
+
+  /**
+   * Dispara notificação automática de agendamento usando os templates configurados da barbearia
+   */
+  async notifyAgendamento(
+    agendamentoId: string,
+    tipo_gatilho:
+      | 'confirmacao_agendamento'
+      | 'lembrete_2h'
+      | 'pagamento_pix_confirmado'
+      | 'cobranca_sinal_pix'
+      | 'pos_atendimento_avaliacao'
+      | 'cancelamento_agendamento',
+    extraVars?: Record<string, string>
+  ): Promise<{ success: boolean; status?: string; erro?: string }> {
+    try {
+      const res = await fetch('/api/whatsapp/notify-agendamento', {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ agendamentoId, tipo_gatilho, extraVars })
+      });
+      const data = await res.json().catch(() => ({}));
+      return { success: Boolean(data?.success), status: data?.status, erro: data?.erro || data?.error };
+    } catch (err: any) {
+      return { success: false, erro: err?.message };
+    }
   }
 };
-
