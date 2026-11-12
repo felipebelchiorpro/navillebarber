@@ -160,6 +160,59 @@ export const ProfissionaisManager: React.FC<ProfissionaisManagerProps> = ({
     }
   }, [servicesList]);
 
+  const handleImageFileSelect = (file: File | undefined) => {
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      alert('A imagem deve ter no máximo 8MB.');
+      return;
+    }
+    setUploadingImage(true);
+    const reader = new FileReader();
+    reader.onload = (loadEvent) => {
+      const dataUrl = loadEvent.target?.result as string;
+      if (!dataUrl) {
+        setUploadingImage(false);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        const maxSide = 400;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxSide || height > maxSide) {
+          if (width > height) {
+            height = Math.round((height * maxSide) / width);
+            width = maxSide;
+          } else {
+            width = Math.round((width * maxSide) / height);
+            height = maxSide;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          setAvatarUrl(canvas.toDataURL('image/jpeg', 0.85));
+        } else {
+          setAvatarUrl(dataUrl);
+        }
+        setUploadingImage(false);
+      };
+      img.onerror = () => {
+        setAvatarUrl(dataUrl);
+        setUploadingImage(false);
+      };
+      img.src = dataUrl;
+    };
+    reader.onerror = () => {
+      alert('Erro ao carregar imagem.');
+      setUploadingImage(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const abrirModalNovo = () => {
     const barbeirosAtuais = barbeiros.length;
     if (barbeirosAtuais >= limitePlano) {
@@ -892,26 +945,8 @@ export const ProfissionaisManager: React.FC<ProfissionaisManagerProps> = ({
                     style={{ display: 'none' }}
                     disabled={uploadingImage}
                     onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      if (file.size > 5 * 1024 * 1024) {
-                        alert('A imagem deve ter no máximo 5MB.');
-                        return;
-                      }
-                      setUploadingImage(true);
-                      const reader = new FileReader();
-                      reader.onload = (loadEvent) => {
-                        const base64 = loadEvent.target?.result as string;
-                        if (base64) {
-                          setAvatarUrl(base64);
-                        }
-                        setUploadingImage(false);
-                      };
-                      reader.onerror = () => {
-                        alert('Erro ao carregar imagem.');
-                        setUploadingImage(false);
-                      };
-                      reader.readAsDataURL(file);
+                      handleImageFileSelect(e.target.files?.[0]);
+                      e.target.value = '';
                     }}
                   />
                 </label>
@@ -935,9 +970,9 @@ export const ProfissionaisManager: React.FC<ProfissionaisManagerProps> = ({
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: '0.4rem',
-                      padding: '0.45rem 0.8rem',
-                      background: 'rgba(251, 191, 36, 0.15)',
-                      border: '1px solid rgba(251, 191, 36, 0.35)',
+                      padding: '0.45rem 0.85rem',
+                      background: 'rgba(251, 191, 36, 0.16)',
+                      border: '1px solid rgba(251, 191, 36, 0.45)',
                       borderRadius: '0.5rem',
                       color: '#fbbf24',
                       fontSize: '0.78rem',
@@ -954,55 +989,16 @@ export const ProfissionaisManager: React.FC<ProfissionaisManagerProps> = ({
                         style={{ display: 'none' }}
                         disabled={uploadingImage}
                         onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          if (file.size > 5 * 1024 * 1024) {
-                            alert('A imagem deve ter no máximo 5MB.');
-                            return;
-                          }
-                          setUploadingImage(true);
-                          const reader = new FileReader();
-                          reader.onload = (loadEvent) => {
-                            const base64 = loadEvent.target?.result as string;
-                            if (base64) {
-                              setAvatarUrl(base64);
-                            }
-                            setUploadingImage(false);
-                          };
-                          reader.onerror = () => {
-                            alert('Erro ao carregar imagem.');
-                            setUploadingImage(false);
-                          };
-                          reader.readAsDataURL(file);
+                          handleImageFileSelect(e.target.files?.[0]);
+                          e.target.value = '';
                         }}
                       />
                     </label>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>Sugestões rápidas:</span>
-                    {[
-                      { label: 'Perfil 1', url: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=300&q=80' },
-                      { label: 'Perfil 2', url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80' },
-                      { label: 'Perfil 3', url: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=300&q=80' },
-                      { label: 'Perfil 4', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80' }
-                    ].map((preset, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setAvatarUrl(preset.url)}
-                        style={{
-                          background: avatarUrl === preset.url ? '#d97706' : 'rgba(255, 255, 255, 0.05)',
-                          color: avatarUrl === preset.url ? '#fff' : 'var(--text-muted)',
-                          border: '1px solid var(--border-subtle)',
-                          borderRadius: '0.35rem',
-                          padding: '0.15rem 0.45rem',
-                          fontSize: '0.68rem',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', marginTop: '0.4rem' }}>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+                      Clique na foto ou em "Fazer Upload" para enviar do dispositivo.
+                    </span>
                     {avatarUrl && (
                       <button
                         type="button"
@@ -1011,9 +1007,10 @@ export const ProfissionaisManager: React.FC<ProfissionaisManagerProps> = ({
                           background: 'transparent',
                           color: '#f87171',
                           border: 'none',
-                          fontSize: '0.68rem',
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
                           cursor: 'pointer',
-                          marginLeft: 'auto'
+                          whiteSpace: 'nowrap'
                         }}
                       >
                         Remover Foto
