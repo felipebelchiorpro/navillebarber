@@ -98,7 +98,7 @@ export const ClubeVipManager: React.FC<ClubeVipManagerProps> = ({
   const [clienteFormCortesMes, setClienteFormCortesMes] = useState<number>(0);
   const [savingCliente, setSavingCliente] = useState<boolean>(false);
 
-  // Carrega planos e clientes da barbearia
+  // Carrega planos e assinantes do Clube VIP da barbearia
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
@@ -107,7 +107,11 @@ export const ClubeVipManager: React.FC<ClubeVipManagerProps> = ({
         clientesService.list(barbearia.id, '', 'todos'),
       ]);
       setPlanos(planosRes);
-      setClientes(clientesRes);
+      // No Clube VIP, exibe estritamente clientes que possuem assinatura (ativo, atrasado, vencido ou cancelado) ou plano vinculado
+      const apenasAssinantes = clientesRes.filter(
+        (c) => c.status_assinatura !== 'sem_plano' || Boolean(c.plano_assinatura_id)
+      );
+      setClientes(apenasAssinantes);
     } catch (err) {
       console.error('Erro ao carregar dados do Clube VIP:', err);
     } finally {

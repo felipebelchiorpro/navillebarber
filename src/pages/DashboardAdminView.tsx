@@ -27,8 +27,10 @@ import {
   Usuario,
   Profissional,
   Servico,
+  Agendamento,
   profissionaisService,
   servicosService,
+  agendamentosService,
   pb
 } from '../services/pocketbase';
 import { AreaChart } from '@/components/charts/area-chart';
@@ -41,6 +43,7 @@ import { ServicosManager } from '../components/ServicosManager';
 import { ProfissionaisManager } from '../components/ProfissionaisManager';
 import { ProdutosManager } from '../components/ProdutosManager';
 import { ClubeVipManager } from '../components/ClubeVipManager';
+import { BaseClientesView } from '../components/BaseClientesView';
 import { WhatsAppManager } from '../components/WhatsAppManager';
 import { MensagensConfigView } from '../components/MensagensConfigView';
 import { PlanoAssinaturaManager } from '../components/PlanoAssinaturaManager';
@@ -86,19 +89,31 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
   const [timeFilter, setTimeFilter] = useState<ChartTimeframe>('30D');
   const [profissionaisList, setProfissionaisList] = useState<Profissional[]>([]);
   const [servicesList, setServicesList] = useState<Servico[]>([]);
+  const [agendamentosList, setAgendamentosList] = useState<Agendamento[]>([]);
+  const [loadingDashboard, setLoadingDashboard] = useState<boolean>(true);
+
+  const fetchDashboardData = () => {
+    const targetId = barbearia?.id || 'ca42u8j6x8o514w';
+    setLoadingDashboard(true);
+    Promise.all([
+      profissionaisService.list(targetId).catch(() => [] as Profissional[]),
+      servicosService.list(targetId).catch(() => [] as Servico[]),
+      agendamentosService.list(targetId).catch(() => [] as Agendamento[]),
+      pb.collection('barbearias').getOne<Barbearia>(targetId).catch(() => null)
+    ]).then(([profs, servs, ags, fresh]) => {
+      setProfissionaisList(profs);
+      setServicesList(servs);
+      setAgendamentosList(ags);
+      if (fresh && onBarbeariaUpdated) {
+        onBarbeariaUpdated(fresh);
+      }
+    }).finally(() => {
+      setLoadingDashboard(false);
+    });
+  };
 
   useEffect(() => {
-    const targetId = barbearia?.id || 'ca42u8j6x8o514w';
-    profissionaisService.list(targetId).then(setProfissionaisList).catch(() => {});
-    servicosService.list(targetId).then(setServicesList).catch(() => {});
-
-    pb.collection('barbearias').getOne<Barbearia>(targetId)
-      .then((fresh) => {
-        if (fresh && onBarbeariaUpdated) {
-          onBarbeariaUpdated(fresh);
-        }
-      })
-      .catch(() => {});
+    fetchDashboardData();
   }, [barbearia?.id]);
 
   const validBarbearia = useMemo<Barbearia>(() => {
@@ -237,17 +252,25 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
         </p>
       </header>
 
-      {/* GRID DE KPIs */}
+      {/* GRID DE KPIs REAIS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
-        {/* CARD 1 - FATURAMENTO */}
+        {/* CARD 1 - FATURAMENTO HOJE */}
         <div className="flex flex-col justify-between p-6 rounded-[2rem] backdrop-blur-md bg-white/[0.02] border border-white/[0.05] shadow-xl min-h-[160px]">
           <div>
             <h3 className="text-sm font-medium text-zinc-400">Faturamento Hoje</h3>
-            <p className="text-3xl font-bold text-white mt-1">R$ 520,00</p>
+            <p className="text-3xl font-bold text-white mt-1">
+              R$ {agendamentosList
+                .filter((a) => a.data === todayIso && (a.status === 'concluido' || a.status === 'confirmado'))
+                .reduce((acc, curr) => acc + (Number(curr.valor_total) || 0), 0)
+                .toFixed(2)
+                .replace('.', ',')}
+            </p>
           </div>
           <div className="flex items-end justify-between mt-4">
-            <span className="text-xs font-medium text-emerald-400 bg-emerald-400/10 px-2.5 py-1 rounded-md">+12% vs ontem</span>
+            <span className="text-xs font-medium text-emerald-400 bg-emerald-400/10 px-2.5 py-1 rounded-md">
+              {agendamentosList.filter((a) => a.data === todayIso).length} agendamentos hoje
+            </span>
             <div className="w-20 h-10">
               <AreaSparkline
                 data={sparkline1}
@@ -262,14 +285,18 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
           </div>
         </div>
 
-        {/* CARD 2 - AGENDAMENTOS */}
+        {/* CARD 2 - AGENDAMENTOS HOJE */}
         <div className="flex flex-col justify-between p-6 rounded-[2rem] backdrop-blur-md bg-white/[0.02] border border-white/[0.05] shadow-xl min-h-[160px]">
           <div>
-            <h3 className="text-sm font-medium text-zinc-400">Agendamentos</h3>
-            <p className="text-3xl font-bold text-white mt-1">14</p>
+            <h3 className="text-sm font-medium text-zinc-400">Agendamentos Hoje</h3>
+            <p className="text-3xl font-bold text-white mt-1">
+              {agendamentosList.filter((a) => a.data === todayIso).length}
+            </p>
           </div>
           <div className="flex items-end justify-between mt-4">
-            <span className="text-xs font-medium text-emerald-400 bg-emerald-400/10 px-2.5 py-1 rounded-md">Ritmo constante</span>
+            <span className="text-xs font-medium text-emerald-400 bg-emerald-400/10 px-2.5 py-1 rounded-md">
+              {agendamentosList.filter((a) => a.data === todayIso && a.status === 'concluido').length} finalizados
+            </span>
             <div className="w-20 h-10">
               <AreaSparkline
                 data={sparkline2}
@@ -284,14 +311,23 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
           </div>
         </div>
 
-        {/* CARD 3 - TICKET MÉDIO */}
+        {/* CARD 3 - TICKET MÉDIO REAL */}
         <div className="flex flex-col justify-between p-6 rounded-[2rem] backdrop-blur-md bg-white/[0.02] border border-white/[0.05] shadow-xl min-h-[160px]">
           <div>
             <h3 className="text-sm font-medium text-zinc-400">Ticket Médio</h3>
-            <p className="text-3xl font-bold text-white mt-1">R$ 37,00</p>
+            <p className="text-3xl font-bold text-white mt-1">
+              {(() => {
+                const concluidos = agendamentosList.filter((a) => a.status === 'concluido');
+                if (concluidos.length === 0) return 'R$ 0,00';
+                const total = concluidos.reduce((acc, curr) => acc + (Number(curr.valor_total) || 0), 0);
+                return `R$ ${(total / concluidos.length).toFixed(2).replace('.', ',')}`;
+              })()}
+            </p>
           </div>
           <div className="flex items-end justify-between mt-4">
-            <span className="text-xs font-medium text-emerald-400 bg-emerald-400/10 px-2.5 py-1 rounded-md">+5% vs média</span>
+            <span className="text-xs font-medium text-zinc-400 bg-white/[0.04] px-2.5 py-1 rounded-md">
+              Base real concluída
+            </span>
             <div className="w-20 h-10">
               <AreaSparkline
                 data={sparkline3}
@@ -305,7 +341,6 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             </div>
           </div>
         </div>
-
       </div>
 
       {/* CARD DO GRÁFICO DIÁRIO */}
@@ -382,49 +417,56 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             <span className="text-xs font-medium text-orange-500 bg-orange-500/10 px-2 py-1 rounded-md">Atualizando...</span>
           </div>
           
-          <div className="flex flex-col gap-4">
-            {/* Item 1 - Na Cadeira */}
-            <div className="flex items-center justify-between p-3 rounded-2xl hover:bg-white/[0.02] transition-colors">
-              <div className="flex items-center gap-4">
-                <div className="text-sm font-bold text-zinc-300 w-12">14:00</div>
-                <div>
-                  <p className="text-sm font-bold text-white">Thiago Silva</p>
-                  <p className="text-xs text-zinc-500">Corte + Barboterapia</p>
-                </div>
+          <div className="flex flex-col gap-3">
+            {agendamentosList.filter((a) => a.data === todayIso).length === 0 ? (
+              <div className="py-8 text-center text-zinc-500 text-sm">
+                Nenhum agendamento agendado para hoje.
               </div>
-              <div className="text-xs font-medium text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                Na Cadeira
-              </div>
-            </div>
+            ) : (
+              agendamentosList
+                .filter((a) => a.data === todayIso)
+                .sort((a, b) => (a.horario || '').localeCompare(b.horario || ''))
+                .map((ag) => {
+                  const servsNomes = (ag.servicos_ids || [])
+                    .map((sid) => servicesList.find((s) => s.id === sid)?.nome)
+                    .filter(Boolean)
+                    .join(' + ') || 'Atendimento Geral';
 
-            {/* Item 2 - Aguardando */}
-            <div className="flex items-center justify-between p-3 rounded-2xl hover:bg-white/[0.02] transition-colors">
-              <div className="flex items-center gap-4">
-                <div className="text-sm font-bold text-zinc-500 w-12">14:45</div>
-                <div>
-                  <p className="text-sm font-bold text-zinc-300">Marcos Paulo</p>
-                  <p className="text-xs text-zinc-500">Degradê</p>
-                </div>
-              </div>
-              <div className="text-xs font-medium text-orange-400 bg-orange-400/10 px-3 py-1 rounded-full">
-                Aguardando
-              </div>
-            </div>
-            
-            {/* Item 3 - Concluído */}
-            <div className="flex items-center justify-between p-3 rounded-2xl hover:bg-white/[0.02] transition-colors opacity-50">
-              <div className="flex items-center gap-4">
-                <div className="text-sm font-bold text-zinc-500 w-12">13:15</div>
-                <div>
-                  <p className="text-sm font-bold text-zinc-400">Lucas Mendes</p>
-                  <p className="text-xs text-zinc-500">Corte Infantil</p>
-                </div>
-              </div>
-              <div className="text-xs font-medium text-zinc-400 bg-zinc-400/10 px-3 py-1 rounded-full">
-                Concluído
-              </div>
-            </div>
+                  let badgeColor = 'text-orange-400 bg-orange-400/10';
+                  let statusLabel = 'Aguardando';
+
+                  if (ag.status === 'concluido') {
+                    badgeColor = 'text-zinc-400 bg-zinc-400/10';
+                    statusLabel = 'Concluído';
+                  } else if (ag.status === 'confirmado') {
+                    badgeColor = 'text-emerald-400 bg-emerald-400/10';
+                    statusLabel = 'Na Cadeira';
+                  }
+
+                  return (
+                    <div
+                      key={ag.id}
+                      className={`flex items-center justify-between p-3 rounded-2xl hover:bg-white/[0.02] transition-colors ${
+                        ag.status === 'concluido' ? 'opacity-60' : ''
+                      }`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="text-sm font-bold text-zinc-300 w-14">{ag.horario || '--:--'}</div>
+                        <div>
+                          <p className="text-sm font-bold text-white">{ag.cliente_nome}</p>
+                          <p className="text-xs text-zinc-500">{servsNomes} • R$ {Number(ag.valor_total || 0).toFixed(2).replace('.', ',')}</p>
+                        </div>
+                      </div>
+                      <div className={`text-xs font-medium px-3 py-1 rounded-full flex items-center gap-2 ${badgeColor}`}>
+                        {statusLabel === 'Na Cadeira' && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        )}
+                        {statusLabel}
+                      </div>
+                    </div>
+                  );
+                })
+            )}
           </div>
         </div>
 
@@ -609,19 +651,12 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             <Settings size={16}/> Regras da Agenda
           </Link>
           
-          {/* MÓDULO WHATSAPP & AUTOMAÇÕES: EXCLUSIVO SE ATIVO NO SUPERADMIN */}
+          {/* MÓDULO WHATSAPP: EXCLUSIVO SE ATIVO NO SUPERADMIN */}
           {temModuloWhatsApp && (
-            <>
-              <Link className={getItemClass('/whatsapp', true)} to="/whatsapp">
-                <div className="flex items-center gap-2.5"><MessageCircle size={16}/> WhatsApp Conexão</div>
-                <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1 font-semibold"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>Online</span>
-              </Link>
-              
-              <Link className={getItemClass('/automacoes', true)} to="/automacoes">
-                <div className="flex items-center gap-2.5"><Bot size={16}/> Automações Whats...</div>
-                <span className="text-[9px] bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded-full border border-indigo-500/20 font-semibold">Anti-Ban</span>
-              </Link>
-            </>
+            <Link className={getItemClass('/whatsapp', true)} to="/whatsapp">
+              <div className="flex items-center gap-2.5"><MessageCircle size={16}/> WhatsApp Conexão</div>
+              <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1 font-semibold"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>Online</span>
+            </Link>
           )}
 
           {/* MÓDULO SPLIT DE PAGAMENTOS & TERMINAIS: EXCLUSIVO SE ATIVO NO SUPERADMIN */}
@@ -760,11 +795,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
           <Route
             path="/clientes"
             element={
-              <ClubeVipManager
-                barbearia={validBarbearia}
-                servicesList={servicesList}
-                profissionaisList={profissionaisList}
-              />
+              <BaseClientesView barbearia={validBarbearia} />
             }
           />
           <Route
