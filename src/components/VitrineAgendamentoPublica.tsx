@@ -38,6 +38,7 @@ import {
   BadgeCheck
 } from 'lucide-react';
 import { NavilleLogo } from './NavilleLogo';
+import { SuccessLottieAnimation } from './SuccessLottieAnimation';
 import {
   pb,
   Barbearia,
@@ -2526,19 +2527,14 @@ export const VitrineAgendamentoPublica: React.FC<VitrineAgendamentoPublicaProps>
 
       {/* ETAPA 6: SUCESSO / TICKET FINALIZADO */}
       {currentStep === 6 && (
-        <main style={{ flex: 1, width: '100%', maxWidth: '540px', margin: '0 auto', padding: '3rem 1rem', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '1.5rem', alignItems: 'center' }}>
+        <main style={{ flex: 1, width: '100%', maxWidth: '540px', margin: '0 auto', padding: '2.25rem 1rem', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '1.25rem', alignItems: 'center' }}>
           <div style={{
-            width: '4.5rem',
-            height: '4.5rem',
-            borderRadius: '50%',
-            backgroundColor: 'rgba(16, 185, 129, 0.15)',
-            border: '2px solid #10B981',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 0 30px rgba(16, 185, 129, 0.3)'
+            filter: 'drop-shadow(0 0 28px rgba(0, 201, 133, 0.35))',
           }}>
-            <CheckCircle2 style={{ width: '2.5rem', height: '2.5rem', color: '#10B981' }} />
+            <SuccessLottieAnimation size={140} />
           </div>
 
           <div>
