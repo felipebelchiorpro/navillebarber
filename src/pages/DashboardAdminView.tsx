@@ -19,7 +19,8 @@ import {
   Bot,
   GitFork,
   Lock,
-  ShieldAlert
+  ShieldAlert,
+  KeyRound
 } from 'lucide-react';
 import SplitPaymentView from '../components/SplitPaymentView';
 import {
@@ -54,6 +55,7 @@ import { NavilleLogo } from '../components/NavilleLogo';
 import { AgendaView } from './AgendaView';
 import { VitrineView } from './VitrineView';
 import { RegrasAgendaView } from '../components/RegrasAgendaView';
+import { EquipeAcessoView } from '../components/EquipeAcessoView';
 
 const Grid = GridIcon;
 
@@ -623,6 +625,11 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
               {profissionaisList.length}/{limiteCadeirasBadge}
             </span>
           </Link>
+
+          <Link className={getItemClass('/equipe-acesso', true)} to="/equipe-acesso">
+            <div className="flex items-center gap-2.5"><KeyRound size={16}/> Acesso dos Barbeiros</div>
+            <span className="text-[9px] bg-orange-500/10 text-orange-400 px-1.5 py-0.5 rounded-full border border-orange-500/20 font-semibold">Login</span>
+          </Link>
           
           <Link className={getItemClass('/servicos', true)} to="/servicos">
             <div className="flex items-center gap-2.5"><Scissors size={16}/> Serviços & Preços</div>
@@ -764,6 +771,17 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
               <ProfissionaisManager
                 barbearia={validBarbearia}
                 servicesList={servicesList}
+              />
+            }
+          />
+          <Route
+            path="/equipe-acesso"
+            element={
+              <EquipeAcessoView
+                barbearia={validBarbearia}
+                profissionaisList={profissionaisList}
+                onBarbeariaUpdated={onBarbeariaUpdated}
+                onProfissionaisReload={carregarDados}
               />
             }
           />

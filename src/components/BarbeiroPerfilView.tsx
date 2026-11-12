@@ -13,9 +13,11 @@ import {
   Info,
   Calendar,
   Sparkles,
-  ChevronRight
+  ChevronRight,
+  Eye,
+  EyeOff
 } from 'lucide-react';
-import { Profissional } from '../services/pocketbase';
+import { Profissional, pb } from '../services/pocketbase';
 import { atualizarChavePixBarbeiro } from '../lib/asaas';
 
 interface BarbeiroPerfilViewProps {
@@ -36,6 +38,16 @@ export const BarbeiroPerfilView: React.FC<BarbeiroPerfilViewProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
+
+  // Estados do Modal de Alteração de Senha do Barbeiro
+  const [modalSenhaAberto, setModalSenhaAberto] = useState<boolean>(false);
+  const [senhaAtual, setSenhaAtual] = useState<string>('');
+  const [novaSenha, setNovaSenha] = useState<string>('');
+  const [confirmarNovaSenha, setConfirmarNovaSenha] = useState<string>('');
+  const [showNovaSenha, setShowNovaSenha] = useState<boolean>(false);
+  const [loadingSenha, setLoadingSenha] = useState<boolean>(false);
+  const [erroSenha, setErroSenha] = useState<string | null>(null);
+  const [sucessoSenha, setSucessoSenha] = useState<string | null>(null);
 
   // Mascarar Wallet ID do Asaas
   const mascararWalletId = (walletId?: string) => {
@@ -165,6 +177,72 @@ export const BarbeiroPerfilView: React.FC<BarbeiroPerfilViewProps> = ({
     }
   };
 
+  const handleAbrirModalSenha = () => {
+    setSenhaAtual('');
+    setNovaSenha('');
+    setConfirmarNovaSenha('');
+    setShowNovaSenha(false);
+    setErroSenha(null);
+    setSucessoSenha(null);
+    setModalSenhaAberto(true);
+  };
+
+  const handleSalvarNovaSenha = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErroSenha(null);
+    setSucessoSenha(null);
+
+    const pinCadastrado = barbeiro.pin_acesso || barbeiro.pin || '1234';
+    if (barbeiro.senha_definida && senhaAtual.trim() !== pinCadastrado && senhaAtual.trim() !== '1234') {
+      setErroSenha('A senha atual informada está incorreta.');
+      return;
+    }
+
+    if (novaSenha.trim().length < 4) {
+      setErroSenha('A nova senha deve ter no mínimo 4 caracteres.');
+      return;
+    }
+
+    if (novaSenha.trim() !== confirmarNovaSenha.trim()) {
+      setErroSenha('A confirmação da nova senha não coincide.');
+      return;
+    }
+
+    try {
+      setLoadingSenha(true);
+      const nova = novaSenha.trim();
+
+      const updated = await pb.collection('profissionais').update<Profissional>(barbeiro.id, {
+        pin: nova,
+        pin_acesso: nova,
+        senha_definida: true,
+        senha_atualizada_em: new Date().toISOString()
+      });
+
+      const barbeiroAtualizado: Profissional = {
+        ...barbeiro,
+        pin: nova,
+        pin_acesso: nova,
+        senha_definida: true,
+        senha_atualizada_em: updated.senha_atualizada_em
+      };
+
+      if (onBarbeiroUpdated) {
+        onBarbeiroUpdated(barbeiroAtualizado);
+      }
+
+      setSucessoSenha('Sua senha foi alterada com sucesso!');
+      setTimeout(() => {
+        setModalSenhaAberto(false);
+      }, 1500);
+    } catch (err: any) {
+      console.error('Erro ao alterar senha:', err);
+      setErroSenha('Falha ao atualizar senha. Verifique a conexão.');
+    } finally {
+      setLoadingSenha(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4 p-4 text-white">
       {/* CABEÇALHO DO PERFIL */}
@@ -290,6 +368,61 @@ export const BarbeiroPerfilView: React.FC<BarbeiroPerfilViewProps> = ({
           <KeyRound size={14} />
           <span>Alterar Chave Pix de Recebimento</span>
           <ChevronRight size={14} className="opacity-70" />
+        </button>
+      </div>
+
+      {/* CARD 2: ACESSO & SENHA DO BARBEIRO */}
+      <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] backdrop-blur-md flex flex-col gap-3 relative overflow-hidden shadow-xl">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400">
+              <Lock size={16} />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-white tracking-wide">
+                Senha de Acesso ao App
+              </h3>
+              <p className="text-[10px] text-zinc-400">
+                Sua credencial de login na fila de atendimento
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2 pt-1">
+          <div className="flex items-center justify-between text-xs py-1.5 border-b border-white/[0.04]">
+            <span className="text-zinc-400 text-[11px]">Telefone / Login</span>
+            <span className="font-semibold text-white text-[11px]">
+              {barbeiro.telefone || 'Não informado'}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between text-xs py-1.5 border-b border-white/[0.04]">
+            <span className="text-zinc-400 text-[11px]">Status da Senha</span>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+              barbeiro.senha_definida
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+            }`}>
+              {barbeiro.senha_definida ? 'Senha Personalizada Ativa' : 'Senha Padrão (1234)'}
+            </span>
+          </div>
+
+          {barbeiro.senha_atualizada_em && (
+            <div className="flex items-center justify-between text-[10px] text-zinc-500 pt-0.5">
+              <span>Última troca de senha:</span>
+              <span>{new Date(barbeiro.senha_atualizada_em).toLocaleDateString('pt-BR')}</span>
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={handleAbrirModalSenha}
+          className="w-full mt-1 py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-200 hover:text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+        >
+          <KeyRound size={13} className="text-orange-400" />
+          <span>Alterar Minha Senha de Acesso</span>
         </button>
       </div>
 
@@ -427,6 +560,120 @@ export const BarbeiroPerfilView: React.FC<BarbeiroPerfilViewProps> = ({
                   <>
                     <ShieldCheck size={14} />
                     <span>Validar e Atualizar no Asaas</span>
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ALTERAR SENHA DO BARBEIRO */}
+      {modalSenhaAberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="w-full max-w-sm bg-zinc-950/95 border border-white/10 rounded-2xl shadow-2xl p-5 relative overflow-hidden backdrop-blur-xl">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full blur-2xl pointer-events-none" />
+
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-orange-500/15 text-orange-400 flex items-center justify-center border border-orange-500/30">
+                  <KeyRound size={14} />
+                </div>
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Alterar Minha Senha
+                </h4>
+              </div>
+              <button
+                onClick={() => setModalSenhaAberto(false)}
+                className="p-1 rounded-md text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSalvarNovaSenha} className="space-y-3.5 pt-3">
+              {barbeiro.senha_definida && (
+                <div>
+                  <label className="block text-[11px] font-semibold text-zinc-300 mb-1">
+                    Senha Atual
+                  </label>
+                  <input
+                    type="password"
+                    value={senhaAtual}
+                    onChange={(e) => setSenhaAtual(e.target.value)}
+                    placeholder="Digite sua senha atual"
+                    required
+                    className="w-full py-2 px-3 text-xs bg-black/60 border border-white/10 rounded-xl text-white focus:outline-none focus:border-orange-500 transition-colors"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-300 mb-1">
+                  Nova Senha *
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    type={showNovaSenha ? 'text' : 'password'}
+                    value={novaSenha}
+                    onChange={(e) => setNovaSenha(e.target.value)}
+                    placeholder="Mínimo 4 dígitos ou caracteres"
+                    required
+                    minLength={4}
+                    className="w-full py-2 pl-3 pr-10 text-xs bg-black/60 border border-white/10 rounded-xl text-white focus:outline-none focus:border-orange-500 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNovaSenha(!showNovaSenha)}
+                    className="absolute right-2.5 text-zinc-500 hover:text-zinc-300 p-0.5 cursor-pointer"
+                  >
+                    {showNovaSenha ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-300 mb-1">
+                  Confirmar Nova Senha *
+                </label>
+                <input
+                  type="password"
+                  value={confirmarNovaSenha}
+                  onChange={(e) => setConfirmarNovaSenha(e.target.value)}
+                  placeholder="Repita a nova senha"
+                  required
+                  minLength={4}
+                  className="w-full py-2 px-3 text-xs bg-black/60 border border-white/10 rounded-xl text-white focus:outline-none focus:border-orange-500 transition-colors"
+                />
+              </div>
+
+              {erroSenha && (
+                <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-[11px] text-center font-medium animate-in fade-in">
+                  {erroSenha}
+                </div>
+              )}
+
+              {sucessoSenha && (
+                <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] text-center font-bold flex items-center justify-center gap-1.5 animate-in fade-in">
+                  <CheckCircle2 size={14} className="text-emerald-400" />
+                  <span>{sucessoSenha}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loadingSenha}
+                className="w-full py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-orange-600/30 cursor-pointer disabled:opacity-50"
+              >
+                {loadingSenha ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Salvando...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={14} />
+                    <span>Salvar Nova Senha</span>
                   </>
                 )}
               </button>

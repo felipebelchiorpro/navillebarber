@@ -201,6 +201,10 @@ export interface Profissional {
   cpf_cnpj?: string;
   pin?: string;
   pin_acesso?: string;
+  senha_definida?: boolean;
+  acesso_ativo?: boolean;
+  senha_atualizada_em?: string;
+  login_usuario?: string;
   pix_tipo?: string;
   pix_chave?: string;
   pix_banco?: string;

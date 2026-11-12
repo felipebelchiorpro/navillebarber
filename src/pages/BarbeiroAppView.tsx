@@ -166,12 +166,18 @@ export default function BarbeiroAppView() {
         return;
       }
 
-      // Validação por PIN (se cadastrado) ou fallback '1234'
-      const pinCorreto = prof.pin_acesso || '1234';
+      if (prof.acesso_ativo === false) {
+        setAuthError('Seu acesso ao app foi bloqueado pelo dono da barbearia.');
+        setAuthLoading(false);
+        return;
+      }
+
+      // Validação por senha ou PIN cadastrado, ou fallback '1234'
+      const pinCorreto = prof.pin_acesso || prof.pin || '1234';
       const cleanTelefone = telefoneAcesso.replace(/\D/g, '');
       const profTelefone = (prof.telefone || '').replace(/\D/g, '');
 
-      const pinValido = pinAcesso.trim() === pinCorreto;
+      const pinValido = pinAcesso.trim() === pinCorreto || (!prof.senha_definida && pinAcesso.trim() === '1234');
       const telefoneValido = cleanTelefone && profTelefone && profTelefone.includes(cleanTelefone);
 
       if (pinValido || telefoneValido) {
@@ -277,17 +283,16 @@ export default function BarbeiroAppView() {
 
             <div>
               <label className="block text-[11px] font-semibold text-zinc-300 mb-1 flex items-center justify-between">
-                <span>PIN de 4 dígitos</span>
+                <span>Senha de Acesso do Barbeiro</span>
                 <span className="text-[10px] text-zinc-500">Padrão: 1234</span>
               </label>
               <div className="relative">
                 <input
                   type="password"
-                  maxLength={6}
                   value={pinAcesso}
                   onChange={(e) => setPinAcesso(e.target.value)}
-                  placeholder="••••"
-                  className="w-full py-2 pl-3 pr-10 text-sm tracking-widest text-center font-mono bg-black/60 border border-white/10 rounded-xl text-white placeholder:text-zinc-600 focus:outline-none focus:border-orange-500 transition-colors"
+                  placeholder="Digite sua senha ou PIN"
+                  className="w-full py-2 pl-3 pr-10 text-xs tracking-wider text-center font-mono bg-black/60 border border-white/10 rounded-xl text-white placeholder:text-zinc-600 focus:outline-none focus:border-orange-500 transition-colors"
                   autoFocus
                 />
                 <Lock size={14} className="absolute right-3 top-2.5 text-zinc-500" />

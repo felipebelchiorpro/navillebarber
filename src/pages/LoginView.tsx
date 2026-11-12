@@ -299,17 +299,16 @@ export default function LoginView() {
             </div>
 
             <div>
-              <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">PIN de Acesso (4 dígitos)</label>
+              <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">Senha de Acesso / PIN</label>
               <div className="flex items-center bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 focus-within:border-orange-500 transition-colors">
                 <KeyRound className="text-zinc-500 mr-2" size={14} />
                 <input
                   type="password"
-                  maxLength={6}
                   required
                   value={pin}
                   onChange={(e) => setPin(e.target.value)}
-                  placeholder="1234"
-                  className="w-full bg-transparent text-xs text-white tracking-widest outline-none"
+                  placeholder="Digite sua senha ou PIN (Padrão: 1234)"
+                  className="w-full bg-transparent text-xs text-white outline-none"
                 />
               </div>
             </div>
