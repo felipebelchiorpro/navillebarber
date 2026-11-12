@@ -781,7 +781,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
                 barbearia={validBarbearia}
                 profissionaisList={profissionaisList}
                 onBarbeariaUpdated={onBarbeariaUpdated}
-                onProfissionaisReload={carregarDados}
+                onProfissionaisReload={fetchDashboardData}
               />
             }
           />
