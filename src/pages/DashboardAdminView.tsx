@@ -757,7 +757,16 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
               />
             }
           />
-          <Route path="/clientes" element={<VisaoGeral />} />
+          <Route
+            path="/clientes"
+            element={
+              <ClubeVipManager
+                barbearia={validBarbearia}
+                servicesList={servicesList}
+                profissionaisList={profissionaisList}
+              />
+            }
+          />
           <Route
             path="/clube"
             element={
