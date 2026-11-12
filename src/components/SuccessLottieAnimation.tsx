@@ -22,12 +22,19 @@ export const SuccessLottieAnimation: React.FC<SuccessLottieAnimationProps> = ({
     const container = containerRef.current;
     if (!container) return;
 
-    const anim = lottie.loadAnimation({
+    container.innerHTML = '';
+    const lottiePlayer = (lottie as any)?.loadAnimation ? lottie : (lottie as any)?.default;
+    if (!lottiePlayer?.loadAnimation) return;
+
+    const anim = lottiePlayer.loadAnimation({
       container,
       renderer: 'svg',
       loop,
       autoplay: true,
       animationData: successAnimationData,
+      rendererSettings: {
+        preserveAspectRatio: 'xMidYMid meet',
+      },
     });
 
     return () => {

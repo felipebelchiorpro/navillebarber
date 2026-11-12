@@ -29,9 +29,28 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Servir arquivos estáticos do frontend (quando compilado)
+// Servir arquivos estáticos do frontend (com no-cache em HTML/SW para evitar app preso em versão antiga no celular)
 if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
+  app.use(
+    express.static(distPath, {
+      setHeaders: (res, filePath) => {
+        const base = path.basename(filePath);
+        if (
+          base === 'index.html' ||
+          base === 'sw.js' ||
+          base === 'registerSW.js' ||
+          base === 'manifest.webmanifest' ||
+          base.startsWith('workbox-')
+        ) {
+          res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+          res.setHeader('Pragma', 'no-cache');
+          res.setHeader('Expires', '0');
+        } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    })
+  );
 }
 
 const PORT = process.env.PORT || 3001;
@@ -972,6 +991,9 @@ app.use((req, res) => {
   }
   const indexPath = path.join(distPath, 'index.html');
   if (fs.existsSync(indexPath)) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     return res.sendFile(indexPath);
   }
   return res.status(200).send('Naville Barber API Server online.');
