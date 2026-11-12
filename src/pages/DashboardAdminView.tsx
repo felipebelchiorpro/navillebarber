@@ -53,6 +53,7 @@ import { VitrineAgendamentoPublica } from '../components/VitrineAgendamentoPubli
 import { NavilleLogo } from '../components/NavilleLogo';
 import { AgendaView } from './AgendaView';
 import { VitrineView } from './VitrineView';
+import { RegrasAgendaView } from '../components/RegrasAgendaView';
 
 const Grid = GridIcon;
 
@@ -826,7 +827,15 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
               )
             }
           />
-          <Route path="/regras" element={<AgendaView barbearia={barbearia} />} />
+          <Route
+            path="/regras"
+            element={
+              <RegrasAgendaView
+                barbearia={validBarbearia}
+                onBarbeariaUpdated={onBarbeariaUpdated}
+              />
+            }
+          />
           <Route
             path="/whatsapp"
             element={

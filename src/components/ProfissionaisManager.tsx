@@ -17,7 +17,10 @@ import {
   Calendar,
   Clock,
   ShieldAlert,
-  Lock
+  Lock,
+  Upload,
+  Camera,
+  Image as ImageIcon
 } from 'lucide-react';
 import { pb, Barbearia, Profissional, Servico, profissionaisService, servicosService } from '../services/pocketbase';
 
@@ -99,12 +102,14 @@ export const ProfissionaisManager: React.FC<ProfissionaisManagerProps> = ({
   const [nome, setNome] = useState('');
   const [apelido, setApelido] = useState('');
   const [telefone, setTelefone] = useState('');
+  const [temComissao, setTemComissao] = useState(true);
   const [taxaComissaoPorcentagem, setTaxaComissaoPorcentagem] = useState('50');
   const [ativo, setAtivo] = useState(true);
   const [tipoAtendimento, setTipoAtendimento] = useState<Profissional['tipo_atendimento']>('ambos');
   const [aceitaClube, setAceitaClube] = useState(true);
   const [selectedServicosIds, setSelectedServicosIds] = useState<string[]>([]);
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   // Delete Confirmation
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -167,6 +172,7 @@ export const ProfissionaisManager: React.FC<ProfissionaisManagerProps> = ({
     setApelido('');
     setTelefone('');
     setAvatarUrl('');
+    setTemComissao(true);
     setTaxaComissaoPorcentagem('50');
     setAtivo(true);
     setTipoAtendimento('ambos');
@@ -183,7 +189,9 @@ export const ProfissionaisManager: React.FC<ProfissionaisManagerProps> = ({
     setApelido(prof.apelido || '');
     setTelefone(prof.telefone || '');
     setAvatarUrl(prof.avatar_url || (prof as any).avatar || '');
-    setTaxaComissaoPorcentagem(Math.round((prof.taxa_comissao || 0.5) * 100).toString());
+    const isSemComissao = prof.taxa_comissao === 0 || (prof as any).tem_comissao === false;
+    setTemComissao(!isSemComissao);
+    setTaxaComissaoPorcentagem(isSemComissao ? '0' : Math.round((prof.taxa_comissao || 0.5) * 100).toString());
     setAtivo(prof.ativo);
     setTipoAtendimento(prof.tipo_atendimento || 'ambos');
     setAceitaClube(prof.aceita_clube !== false);
@@ -221,13 +229,14 @@ export const ProfissionaisManager: React.FC<ProfissionaisManagerProps> = ({
       return; // Impede a continuação do código
     }
 
-    const taxaComissaoDecimal = parseFloat(taxaComissaoPorcentagem) / 100;
+    const taxaComissaoDecimal = temComissao ? (parseFloat(taxaComissaoPorcentagem) / 100 || 0) : 0;
     const payload = {
       barbearia_id: barbearia.id,
       nome: nome.trim(),
       apelido: apelido.trim() || undefined,
       telefone: telefone.trim() || undefined,
       taxa_comissao: taxaComissaoDecimal,
+      tem_comissao: temComissao,
       ativo,
       tipo_atendimento: tipoAtendimento,
       aceita_clube: aceitaClube,
@@ -256,19 +265,19 @@ export const ProfissionaisManager: React.FC<ProfissionaisManagerProps> = ({
       return;
     }
 
-    const comissaoNum = parseFloat(taxaComissaoPorcentagem);
+    const comissaoNum = temComissao ? parseFloat(taxaComissaoPorcentagem) : 0;
 
     if (!nome.trim()) {
       setFormError('O nome completo do profissional é obrigatório.');
       return;
     }
 
-    if (isNaN(comissaoNum) || comissaoNum < 0 || comissaoNum > 100) {
+    if (temComissao && (isNaN(comissaoNum) || comissaoNum < 0 || comissaoNum > 100)) {
       setFormError('Informe uma comissão válida entre 0% e 100%.');
       return;
     }
 
-    const taxaComissaoDecimal = comissaoNum / 100;
+    const taxaComissaoDecimal = temComissao ? comissaoNum / 100 : 0;
 
     setSubmitting(true);
     try {
@@ -278,6 +287,7 @@ export const ProfissionaisManager: React.FC<ProfissionaisManagerProps> = ({
           apelido: apelido.trim() || undefined,
           telefone: telefone.trim() || undefined,
           taxa_comissao: taxaComissaoDecimal,
+          tem_comissao: temComissao,
           ativo,
           tipo_atendimento: tipoAtendimento,
           aceita_clube: aceitaClube,
@@ -817,14 +827,22 @@ export const ProfissionaisManager: React.FC<ProfissionaisManagerProps> = ({
                 gap: '1rem',
                 flexWrap: 'wrap'
               }}>
-                <div style={{ position: 'relative' }}>
+                {/* Avatar Preview com clique para upload */}
+                <label
+                  style={{
+                    position: 'relative',
+                    cursor: 'pointer',
+                    display: 'inline-block'
+                  }}
+                  title="Clique para escolher uma foto do dispositivo"
+                >
                   {avatarUrl ? (
                     <img
                       src={avatarUrl}
                       alt="Prévia Foto"
                       style={{
-                        width: '3.75rem',
-                        height: '3.75rem',
+                        width: '4rem',
+                        height: '4rem',
                         borderRadius: '50%',
                         objectFit: 'cover',
                         border: '2px solid #fbbf24',
@@ -833,35 +851,133 @@ export const ProfissionaisManager: React.FC<ProfissionaisManagerProps> = ({
                     />
                   ) : (
                     <div style={{
-                      width: '3.75rem',
-                      height: '3.75rem',
+                      width: '4rem',
+                      height: '4rem',
                       borderRadius: '50%',
                       background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
                       justifyContent: 'center',
                       color: '#fff',
                       fontWeight: 800,
-                      fontSize: '1.15rem',
-                      border: '2px dashed rgba(255, 255, 255, 0.2)'
+                      fontSize: '0.95rem',
+                      border: '2px dashed rgba(255, 255, 255, 0.3)'
                     }}>
-                      {nome ? nome.slice(0, 2).toUpperCase() : 'FB'}
+                      <Camera size={16} style={{ marginBottom: '2px' }} />
+                      <span style={{ fontSize: '0.62rem' }}>FOTO</span>
                     </div>
                   )}
-                </div>
+
+                  <div style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    right: 0,
+                    width: '1.35rem',
+                    height: '1.35rem',
+                    borderRadius: '50%',
+                    background: '#fbbf24',
+                    color: '#000',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 2px 5px rgba(0,0,0,0.4)'
+                  }}>
+                    <Camera size={11} />
+                  </div>
+
+                  <input
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    disabled={uploadingImage}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 5 * 1024 * 1024) {
+                        alert('A imagem deve ter no máximo 5MB.');
+                        return;
+                      }
+                      setUploadingImage(true);
+                      const reader = new FileReader();
+                      reader.onload = (loadEvent) => {
+                        const base64 = loadEvent.target?.result as string;
+                        if (base64) {
+                          setAvatarUrl(base64);
+                        }
+                        setUploadingImage(false);
+                      };
+                      reader.onerror = () => {
+                        alert('Erro ao carregar imagem.');
+                        setUploadingImage(false);
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </label>
 
                 <div style={{ flex: 1, minWidth: '220px' }}>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.3rem', color: '#f8fafc' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#f8fafc', marginBottom: '0.35rem' }}>
                     Foto de Perfil do Barbeiro
                   </label>
-                  <input
-                    type="url"
-                    className="input-field"
-                    placeholder="URL da imagem (ex: https://... ou foto do profissional)"
-                    value={avatarUrl}
-                    onChange={(e) => setAvatarUrl(e.target.value)}
-                    style={{ fontSize: '0.8rem', padding: '0.45rem 0.65rem', width: '100%' }}
-                  />
+
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Link da imagem ou selecione pelo botão ao lado"
+                      value={avatarUrl.startsWith('data:') ? '✅ [Foto do dispositivo selecionada]' : avatarUrl}
+                      onChange={(e) => setAvatarUrl(e.target.value)}
+                      style={{ fontSize: '0.8rem', padding: '0.45rem 0.65rem', flex: 1 }}
+                    />
+
+                    <label style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      padding: '0.45rem 0.8rem',
+                      background: 'rgba(251, 191, 36, 0.15)',
+                      border: '1px solid rgba(251, 191, 36, 0.35)',
+                      borderRadius: '0.5rem',
+                      color: '#fbbf24',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.2s'
+                    }}>
+                      <Upload size={13} />
+                      <span>{uploadingImage ? 'Enviando...' : 'Fazer Upload'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        disabled={uploadingImage}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > 5 * 1024 * 1024) {
+                            alert('A imagem deve ter no máximo 5MB.');
+                            return;
+                          }
+                          setUploadingImage(true);
+                          const reader = new FileReader();
+                          reader.onload = (loadEvent) => {
+                            const base64 = loadEvent.target?.result as string;
+                            if (base64) {
+                              setAvatarUrl(base64);
+                            }
+                            setUploadingImage(false);
+                          };
+                          reader.onerror = () => {
+                            alert('Erro ao carregar imagem.');
+                            setUploadingImage(false);
+                          };
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </label>
+                  </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>Sugestões rápidas:</span>
                     {[
@@ -989,25 +1105,54 @@ export const ProfissionaisManager: React.FC<ProfissionaisManagerProps> = ({
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.4rem' }}>
-                    Taxa de Comissão (%) <span style={{ color: '#fbbf24' }}>*</span>
-                  </label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type="number"
-                      step="1"
-                      min="0"
-                      max="100"
-                      className="input-field"
-                      placeholder="50"
-                      value={taxaComissaoPorcentagem}
-                      onChange={(e) => setTaxaComissaoPorcentagem(e.target.value)}
-                      required
-                    />
-                    <span style={{ position: 'absolute', right: '0.9rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', fontSize: '0.9rem' }}>
-                      %
-                    </span>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                      Comissão {temComissao && <span style={{ color: '#fbbf24' }}>*</span>}
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontSize: '0.75rem', color: temComissao ? '#34d399' : 'var(--text-dim)' }}>
+                      <input
+                        type="checkbox"
+                        checked={temComissao}
+                        onChange={(e) => {
+                          setTemComissao(e.target.checked);
+                          if (!e.target.checked) setTaxaComissaoPorcentagem('0');
+                          else if (taxaComissaoPorcentagem === '0') setTaxaComissaoPorcentagem('50');
+                        }}
+                        style={{ accentColor: '#fbbf24' }}
+                      />
+                      <span>{temComissao ? 'Com comissão' : 'Sem comissão (Dono)'}</span>
+                    </label>
                   </div>
+
+                  {temComissao ? (
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        max="100"
+                        className="input-field"
+                        placeholder="50"
+                        value={taxaComissaoPorcentagem}
+                        onChange={(e) => setTaxaComissaoPorcentagem(e.target.value)}
+                        required={temComissao}
+                      />
+                      <span style={{ position: 'absolute', right: '0.9rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', fontSize: '0.9rem' }}>
+                        %
+                      </span>
+                    </div>
+                  ) : (
+                    <div style={{
+                      padding: '0.55rem 0.75rem',
+                      borderRadius: '0.5rem',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid var(--border-subtle)',
+                      fontSize: '0.75rem',
+                      color: '#a1a1aa'
+                    }}>
+                      ⭐ 100% da receita fica na barbearia (Proprietário/Sem repasse).
+                    </div>
+                  )}
                 </div>
               </div>
 

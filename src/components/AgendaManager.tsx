@@ -558,9 +558,12 @@ export const AgendaManager: React.FC<AgendaManagerProps> = ({
   const handleOpenBlockAt = (slotTime?: string, barberId?: string) => {
     if (slotTime) {
       const startM = timeToMinutes(slotTime);
-      const endM = Math.min(startM + 60, timeToMinutes(DEFAULT_CLOSING_TIME));
+      const endM = Math.min(startM + 30, timeToMinutes(DEFAULT_CLOSING_TIME));
       setFormBlockInicio(slotTime);
       setFormBlockFim(minutesToTime(endM));
+    }
+    if (!formBlockMotivo) {
+      setFormBlockMotivo('Intervalo / Bloqueio');
     }
     setFormBlockBarbeiroId(barberId && barberId !== 'todos' ? barberId : 'todos');
     setIsBlockModalOpen(true);
@@ -995,33 +998,55 @@ export const AgendaManager: React.FC<AgendaManagerProps> = ({
 
                       {/* 4. Horário livre */}
                       {!hasContent ? (
-                        <div
-                          onClick={() => handleOpenNewAppointment(freeBarbers[0]?.id, slotTime)}
-                          className="w-full px-3 py-1.5 rounded-lg border border-dashed border-white/10 hover:border-white/20 hover:bg-white/[0.02] transition-all cursor-pointer flex items-center justify-center gap-1.5 h-[34px] text-xs font-medium text-zinc-500"
-                        >
-                          <span>+</span>
+                        <div className="w-full px-3 py-1 rounded-lg border border-dashed border-white/10 hover:border-white/20 hover:bg-white/[0.02] transition-all flex items-center justify-between gap-2 h-[34px] text-xs font-medium text-zinc-500">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenNewAppointment(freeBarbers[0]?.id, slotTime)}
+                            className="flex items-center gap-1.5 text-zinc-400 hover:text-orange-400 transition-colors cursor-pointer py-1"
+                          >
+                            <span>+ Agendar</span>
+                            {freeBarbers.length > 0 && selectedBarbeiroId === 'todos' && (
+                              <span className="text-[10px] text-zinc-500 font-normal">
+                                ({freeBarbers.length} disp.)
+                              </span>
+                            )}
+                          </button>
+
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleOpenBlockAt(slotTime, selectedBarbeiroId);
                             }}
-                            className="hover:text-red-400 transition-colors"
+                            className="px-2 py-0.5 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400/90 hover:text-red-300 text-[11px] font-semibold flex items-center gap-1 transition-all border border-red-500/20 cursor-pointer"
+                            title="Bloquear este horário na grade"
                           >
+                            <Lock size={11} />
                             Bloquear
                           </button>
-                          <span>ou</span>
-                          <span className="hover:text-orange-400 transition-colors">Agendar</span>
                         </div>
                       ) : (
                         freeBarbers.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenNewAppointment(freeBarbers[0].id, slotTime)}
-                            className="w-full px-3 py-1.5 rounded-lg border border-dashed border-white/[0.06] hover:border-white/20 hover:bg-white/[0.02] text-left text-xs text-zinc-500 hover:text-zinc-300 transition-all truncate h-[34px] flex items-center"
-                          >
-                            + Agendar com {freeBarbers.map((b) => b.nome.split(' ')[0]).join(', ')}
-                          </button>
+                          <div className="w-full px-3 py-1 rounded-lg border border-dashed border-white/[0.06] hover:border-white/20 hover:bg-white/[0.02] text-xs text-zinc-500 flex items-center justify-between gap-2 h-[34px]">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenNewAppointment(freeBarbers[0].id, slotTime)}
+                              className="text-left text-zinc-400 hover:text-zinc-200 transition-all truncate flex items-center cursor-pointer py-1"
+                            >
+                              + Agendar com {freeBarbers.map((b) => b.nome.split(' ')[0]).join(', ')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenBlockAt(slotTime, selectedBarbeiroId);
+                              }}
+                              className="px-2 py-0.5 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400/90 hover:text-red-300 text-[11px] font-semibold flex items-center gap-1 transition-all border border-red-500/20 shrink-0 cursor-pointer"
+                              title="Bloquear este horário"
+                            >
+                              <Lock size={11} /> Bloquear
+                            </button>
+                          </div>
                         )
                       )}
                     </div>

@@ -654,13 +654,31 @@ export const VitrineAgendamentoPublica: React.FC<VitrineAgendamentoPublicaProps>
     };
   }, [servicosSelecionados, valorTotal, assinaturaVipAtiva, vipResult, planoVip]);
 
-  // Lista dos próximos 14 dias liberados
+  // Lista dos próximos dias liberados (respeita regras de bloqueio semanal da barbearia)
   const quickDays = useMemo(() => {
     const list: { iso: string; diaSemanaAbrev: string; diaNumero: number; diaMes: string }[] = [];
     const nomesSemanaAbrev = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
     const nomesMes = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-    for (let i = 0; i < 14; i++) {
+    const limitarSemana = Boolean((barbearia as any)?.limitar_agendamento_semana);
+    const diaLiberacao = (barbearia as any)?.dia_liberacao_agenda || 'domingo';
+    const maxDiasConfig = Number((barbearia as any)?.dias_max_agendamento) || 7;
+
+    let totalDiasExibir = 14;
+
+    if (limitarSemana) {
+      if (diaLiberacao === 'domingo' || diaLiberacao === 'segunda') {
+        const hoje = new Date();
+        const dayOfWeek = hoje.getDay(); // 0 = Domingo, 1 = Segunda, ..., 6 = Sábado
+        // Se domingo à noite libera a semana, clientes só agendam até o fechamento do ciclo semanal
+        const diasRestantesAteDomingo = dayOfWeek === 0 ? 7 : (7 - dayOfWeek);
+        totalDiasExibir = Math.max(1, Math.min(diasRestantesAteDomingo + 1, maxDiasConfig));
+      } else {
+        totalDiasExibir = Math.max(1, Math.min(maxDiasConfig, 30));
+      }
+    }
+
+    for (let i = 0; i < totalDiasExibir; i++) {
       const d = new Date();
       d.setDate(d.getDate() + i);
       const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -672,7 +690,7 @@ export const VitrineAgendamentoPublica: React.FC<VitrineAgendamentoPublicaProps>
       });
     }
     return list;
-  }, []);
+  }, [barbearia]);
 
   // Motor de cálculo de slots disponíveis
   const availableSlots = useMemo(() => {
@@ -1942,7 +1960,9 @@ export const VitrineAgendamentoPublica: React.FC<VitrineAgendamentoPublicaProps>
                   ESCOLHA A DATA
                 </span>
                 <span style={{ fontSize: '0.72rem', color: 'rgba(245, 158, 11, 0.85)', fontWeight: 600 }}>
-                  Próximos 14 dias liberados
+                  {Boolean((barbearia as any)?.limitar_agendamento_semana)
+                    ? `Agenda da semana (${quickDays.length} dias liberados)`
+                    : 'Próximos 14 dias liberados'}
                 </span>
               </div>
 
