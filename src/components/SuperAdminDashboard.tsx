@@ -40,11 +40,18 @@ export default function SuperAdminDashboard() {
   const handleCriarBarbearia = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const pKey = plano.toLowerCase();
+      const isStarter = pKey === 'starter';
+      const isEliteOrEnterprise = pKey === 'elite' || pKey === 'enterprise';
+      const maxCadeirasPadrao = isStarter ? 1 : pKey === 'pro' ? 5 : pKey === 'elite' ? 15 : 99;
+
       const novaBarbearia = await pb.collection('barbearias').create({
         nome,
         slug, // Salva exatamente o que estiver no campo
         plano,
-        plano_saas: plano.toLowerCase(),
+        plano_saas: pKey,
+        max_barbeiros: maxCadeirasPadrao,
+        limite_profissionais: maxCadeirasPadrao,
         proprietario,
         nome_proprietario: proprietario || nome,
         telefone,
@@ -52,9 +59,12 @@ export default function SuperAdminDashboard() {
         documento,
         email,
         status: 'ativa',
-        // Configurações padrão de Split e Retenção Naville
-        split_ativo: true,
-        modulo_split_asaas: true,
+        // Módulos por Plano (WhatsApp em todos; Clube VIP a partir do Pro; Split somente Elite/Enterprise)
+        modulo_whatsapp: true,
+        vip_club_ativo: !isStarter,
+        modulo_clube_vip: !isStarter,
+        split_ativo: isEliteOrEnterprise,
+        modulo_split_asaas: isEliteOrEnterprise,
         split_carencia_tipo: 'dias',
         split_dias_gratis: 30,
         split_data_ativacao: new Date().toISOString(),
@@ -238,9 +248,10 @@ export default function SuperAdminDashboard() {
                       onChange={(e) => setPlano(e.target.value)}
                       className="w-full bg-white/[0.03] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none transition-colors cursor-pointer appearance-none"
                     >
-                      <option value="Starter" className="bg-zinc-900">Starter (R$ 69,90)</option>
-                      <option value="Pro" className="bg-zinc-900">Pro (R$ 99,90)</option>
-                      <option value="Elite" className="bg-zinc-900">Elite (R$ 160,00)</option>
+                      <option value="Starter" className="bg-zinc-900">Starter - 1 Cadeira (R$ 69,90)</option>
+                      <option value="Pro" className="bg-zinc-900">Pro - Clube VIP (R$ 99,90)</option>
+                      <option value="Elite" className="bg-zinc-900">Elite - Split + VIP (R$ 160,00)</option>
+                      <option value="Enterprise" className="bg-zinc-900">Enterprise - Personalizado (Sob Consulta)</option>
                     </select>
                   </div>
                 </div>

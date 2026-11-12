@@ -37,27 +37,69 @@ interface PlanoAssinaturaManagerProps {
   onBarbeariaUpdated: (barbearia: Barbearia) => void;
 }
 
-const PLANOS_INFO = {
+type PlanKey = 'starter' | 'pro' | 'elite' | 'enterprise';
+
+const PLANOS_INFO: Record<PlanKey, {
+  nome: string;
+  valor: number;
+  limite: number;
+  limiteLabel: string;
+  beneficios: string[];
+  tag: string;
+  sobConsulta?: boolean;
+}> = {
   starter: {
     nome: 'Starter',
-    valor: 97.00,
-    limite: 2,
-    beneficios: ['Até 2 Barbeiros', 'Agendamentos ilimitados', 'PDV Básico', 'Suporte padrão'],
+    valor: 69.90,
+    limite: 1,
+    limiteLabel: '1 cadeira (upgrade sob demanda)',
+    beneficios: [
+      '1 Cadeira (Expansível sob demanda)',
+      'Gestão Completa (Agenda, PDV e Clientes)',
+      'Mensagens Automáticas de WhatsApp',
+      'Vitrine de Agendamento Online'
+    ],
     tag: 'Essencial'
   },
   pro: {
     nome: 'Pro',
-    valor: 197.00,
+    valor: 99.90,
     limite: 5,
-    beneficios: ['Até 5 Barbeiros', 'Notificações WhatsApp', 'Clube de Assinaturas VIP', 'Relatórios Financeiros'],
+    limiteLabel: '5 cadeiras',
+    beneficios: [
+      'Múltiplas Cadeiras (Configurável)',
+      'Gestão Completa + WhatsApp Automático',
+      'Clube de Assinaturas VIP',
+      'Relatórios Financeiros & Comissões'
+    ],
     tag: 'Mais Popular'
+  },
+  elite: {
+    nome: 'Elite',
+    valor: 160.00,
+    limite: 15,
+    limiteLabel: '15 cadeiras',
+    beneficios: [
+      'Tudo do Plano Pro + Clube VIP',
+      'Mensagens Automáticas de WhatsApp',
+      'Pagamento Split Automático',
+      'Repasse & Gestão de Alta Escala'
+    ],
+    tag: 'Pagamento Split'
   },
   enterprise: {
     nome: 'Enterprise',
-    valor: 347.00,
-    limite: 15,
-    beneficios: ['Até 15 Barbeiros', 'Múltiplas Unidades', 'Automações Avançadas', 'Suporte Prioritário VIP'],
-    tag: 'Máxima Escala'
+    valor: 0,
+    limite: 99,
+    limiteLabel: 'Sob medida',
+    beneficios: [
+      'Personalização Nível Altíssimo',
+      'Múltiplas Unidades e Franquias',
+      'Pagamento Split + Clube VIP + WhatsApp',
+      'Implantação Dedicada & Sob Demanda'
+    ],
+    tag: 'Sob Consulta',
+    sobConsulta: true
   }
 };
 
@@ -77,13 +119,21 @@ export const PlanoAssinaturaManager: React.FC<PlanoAssinaturaManagerProps> = ({
     setCurrentBarb(barbearia);
   }, [barbearia]);
 
-  const planoKey = (currentBarb.plano_saas === 'basico' ? 'starter' : currentBarb.plano_saas) as 'starter' | 'pro' | 'enterprise';
-  const planoAtual = PLANOS_INFO[planoKey] || PLANOS_INFO.pro;
+  const rawPlano = (currentBarb.plano_saas || currentBarb.plano || 'starter').toLowerCase();
+  const planoKey: PlanKey =
+    rawPlano === 'basico' || rawPlano === 'starter'
+      ? 'starter'
+      : rawPlano === 'elite'
+        ? 'elite'
+        : rawPlano === 'enterprise' || rawPlano === 'vitalicio'
+          ? 'enterprise'
+          : 'pro';
+  const planoAtual = PLANOS_INFO[planoKey] || PLANOS_INFO.starter;
   const limiteCadeiras = Math.max(
     1,
     Number(currentBarb.max_barbeiros) ||
     Number(currentBarb.limite_profissionais) ||
-    (planoKey === 'starter' ? 2 : planoKey === 'pro' ? 5 : 15)
+    planoAtual.limite
   );
 
   const carregarDados = async () => {
@@ -186,17 +236,33 @@ export const PlanoAssinaturaManager: React.FC<PlanoAssinaturaManagerProps> = ({
     }
   };
 
-  const handleTrocarPlano = async (novoPlano: 'starter' | 'pro' | 'enterprise') => {
+  const handleTrocarPlano = async (novoPlano: PlanKey) => {
+    if (novoPlano === 'enterprise') {
+      const msg = encodeURIComponent(
+        `Olá! Tenho interesse no Plano Enterprise (Personalização Nível Altíssimo) para a barbearia ${currentBarb.nome}.`
+      );
+      window.open(`https://wa.me/5519998277880?text=${msg}`, '_blank');
+      return;
+    }
+
     setActionLoading(true);
     try {
       const info = PLANOS_INFO[novoPlano];
+      const isStarter = novoPlano === 'starter';
+      const isElite = novoPlano === 'elite';
+
       const atualizada = await saasService.updatePlanoConfig(currentBarb.id, {
         plano_saas: novoPlano,
         limite_profissionais: info.limite,
-      });
+        modulo_whatsapp: true,
+        vip_club_ativo: !isStarter,
+        modulo_clube_vip: !isStarter,
+        split_ativo: isElite,
+        modulo_split_asaas: isElite,
+      } as any);
       setCurrentBarb(atualizada);
       onBarbeariaUpdated(atualizada);
-      showFeedback('sucesso', `Plano migrado para ${info.nome}! Limite atualizado para ${info.limite} cadeiras.`);
+      showFeedback('sucesso', `Plano migrado para ${info.nome}! Limite atualizado para ${info.limite} cadeira(s).`);
     } catch (err: any) {
       console.error('Erro ao migrar plano:', err);
       showFeedback('erro', `Erro ao atualizar plano: ${err?.message || 'Falha na requisição'}`);
@@ -798,7 +864,7 @@ export const PlanoAssinaturaManager: React.FC<PlanoAssinaturaManagerProps> = ({
           gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
           gap: '1.25rem'
         }}>
-          {(Object.keys(PLANOS_INFO) as Array<'starter' | 'pro' | 'enterprise'>).map((key) => {
+          {(Object.keys(PLANOS_INFO) as Array<PlanKey>).map((key) => {
             const p = PLANOS_INFO[key];
             const isCurrent = planoKey === key;
 
@@ -806,8 +872,8 @@ export const PlanoAssinaturaManager: React.FC<PlanoAssinaturaManagerProps> = ({
               <div
                 key={key}
                 style={{
-                  background: isCurrent ? 'rgba(217, 119, 6, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-                  border: isCurrent ? '2px solid #fbbf24' : '1px solid var(--border-subtle)',
+                  background: isCurrent ? 'rgba(217, 119, 6, 0.08)' : p.sobConsulta ? 'rgba(139, 92, 246, 0.06)' : 'rgba(255, 255, 255, 0.02)',
+                  border: isCurrent ? '2px solid #fbbf24' : p.sobConsulta ? '1px solid rgba(167, 139, 250, 0.35)' : '1px solid var(--border-subtle)',
                   borderRadius: '1rem',
                   padding: '1.5rem',
                   display: 'flex',
@@ -839,18 +905,26 @@ export const PlanoAssinaturaManager: React.FC<PlanoAssinaturaManagerProps> = ({
                     <h4 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#f3f4f6' }}>
                       {p.nome}
                     </h4>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-                      {p.limite} cadeiras
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                      {p.limiteLabel}
                     </span>
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.3rem', marginBottom: '1rem' }}>
-                    <span style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fbbf24' }}>
-                      R$ {p.valor.toFixed(2)}
-                    </span>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>
-                      / mês
-                    </span>
+                    {p.sobConsulta ? (
+                      <span style={{ fontSize: '1.4rem', fontWeight: 800, color: '#c4b5fd' }}>
+                        Sob Consulta
+                      </span>
+                    ) : (
+                      <>
+                        <span style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fbbf24' }}>
+                          R$ {p.valor.toFixed(2)}
+                        </span>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>
+                          / mês
+                        </span>
+                      </>
+                    )}
                   </div>
 
                   <ul style={{
@@ -863,7 +937,7 @@ export const PlanoAssinaturaManager: React.FC<PlanoAssinaturaManagerProps> = ({
                   }}>
                     {p.beneficios.map((b, idx) => (
                       <li key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                        <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem', color: '#22c55e', flexShrink: 0 }} />
+                        <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem', color: p.sobConsulta ? '#a78bfa' : '#22c55e', flexShrink: 0 }} />
                         <span>{b}</span>
                       </li>
                     ))}
@@ -874,9 +948,13 @@ export const PlanoAssinaturaManager: React.FC<PlanoAssinaturaManagerProps> = ({
                   onClick={() => handleTrocarPlano(key)}
                   disabled={isCurrent || actionLoading}
                   style={{
-                    background: isCurrent ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.08)',
-                    border: `1px solid ${isCurrent ? 'transparent' : 'rgba(255, 255, 255, 0.15)'}`,
-                    color: isCurrent ? 'var(--text-dim)' : '#f3f4f6',
+                    background: isCurrent
+                      ? 'rgba(255, 255, 255, 0.05)'
+                      : p.sobConsulta
+                        ? 'rgba(139, 92, 246, 0.2)'
+                        : 'rgba(255, 255, 255, 0.08)',
+                    border: `1px solid ${isCurrent ? 'transparent' : p.sobConsulta ? 'rgba(167, 139, 250, 0.45)' : 'rgba(255, 255, 255, 0.15)'}`,
+                    color: isCurrent ? 'var(--text-dim)' : p.sobConsulta ? '#ddd6fe' : '#f3f4f6',
                     padding: '0.65rem 1rem',
                     borderRadius: '0.5rem',
                     fontSize: '0.85rem',
@@ -887,7 +965,11 @@ export const PlanoAssinaturaManager: React.FC<PlanoAssinaturaManagerProps> = ({
                     textAlign: 'center'
                   }}
                 >
-                  {isCurrent ? 'Plano Atual em Uso' : `Migrar para ${p.nome}`}
+                  {isCurrent
+                    ? 'Plano Atual em Uso'
+                    : p.sobConsulta
+                      ? 'Entrar em Contato (Personalizar)'
+                      : `Migrar para ${p.nome}`}
                 </button>
               </div>
             );

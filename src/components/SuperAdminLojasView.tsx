@@ -2118,9 +2118,10 @@ export default function SuperAdminLojasView() {
                       onChange={(e) => setEditPlano(e.target.value)}
                       className="bg-zinc-900 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 cursor-pointer"
                     >
-                      <option value="starter">Starter (Até 2 Cadeiras)</option>
-                      <option value="pro">Pro (Até 5 Cadeiras)</option>
-                      <option value="elite">Elite (Ilimitado / Custom)</option>
+                      <option value="starter">Starter (1 Cadeira • Gestão + WhatsApp)</option>
+                      <option value="pro">Pro (Gestão + WhatsApp + Clube VIP)</option>
+                      <option value="elite">Elite (Pro + Pagamento Split)</option>
+                      <option value="enterprise">Enterprise (Personalizado / Sob Consulta)</option>
                     </select>
                   </div>
 

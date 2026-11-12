@@ -32,7 +32,7 @@ export interface Barbearia {
   status: 'ativo' | 'ativa' | 'teste' | 'bloqueado' | 'bloqueada' | 'cancelado' | 'cancelada';
   status_assinatura?: 'ativo' | 'trial' | 'bloqueado' | 'cancelado';
   plano?: string;
-  plano_saas: 'starter' | 'pro' | 'enterprise' | 'basico' | 'vitalicio';
+  plano_saas: 'starter' | 'pro' | 'elite' | 'enterprise' | 'basico' | 'vitalicio';
   e_vitalicio: boolean;
   max_barbeiros: number;
   limite_profissionais?: number;
@@ -1400,7 +1400,7 @@ export const saasService = {
     barbeariaId: string,
     data: {
       plano?: string;
-  plano_saas: 'starter' | 'pro' | 'enterprise' | 'basico' | 'vitalicio';
+  plano_saas: 'starter' | 'pro' | 'elite' | 'enterprise' | 'basico' | 'vitalicio';
       limite_profissionais?: number;
       data_expiracao_plano?: string;
     }

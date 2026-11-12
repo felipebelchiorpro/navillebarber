@@ -137,11 +137,19 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
     } as unknown as Barbearia;
   }, [barbearia]);
 
-  // Governança Estrita de Módulos (definidas no SuperAdmin)
+  // Governança Estrita de Planos e Módulos (Starter -> Pro -> Elite -> Enterprise)
+  const planoAtualKey = ((validBarbearia.plano_saas || validBarbearia.plano || 'starter') as string).toLowerCase();
+  const isStarterPlan = planoAtualKey === 'starter' || planoAtualKey === 'basico';
+  const isProPlan = planoAtualKey === 'pro';
+  const isEliteOrHigher = planoAtualKey === 'elite' || planoAtualKey === 'enterprise' || planoAtualKey === 'vitalicio';
+
   const temModuloFinanceiro = Boolean(validBarbearia.modulo_financeiro);
-  const temModuloClube = Boolean(validBarbearia.vip_club_ativo || validBarbearia.modulo_clube_vip);
-  const temModuloWhatsApp = Boolean(validBarbearia.modulo_whatsapp);
-  const temModuloSplit = Boolean(validBarbearia.split_ativo ?? validBarbearia.modulo_split_asaas);
+  // Clube VIP: não disponível no plano Starter (apenas Pro, Elite e Enterprise)
+  const temModuloClube = !isStarterPlan && Boolean(validBarbearia.vip_club_ativo || validBarbearia.modulo_clube_vip || isProPlan || isEliteOrHigher);
+  // Mensagens WhatsApp: disponível em TODOS os planos (Starter, Pro, Elite e Enterprise)
+  const temModuloWhatsApp = validBarbearia.modulo_whatsapp !== false;
+  // Pagamento Split: exclusivo dos planos Elite e Enterprise
+  const temModuloSplit = isEliteOrHigher && Boolean(validBarbearia.split_ativo ?? validBarbearia.modulo_split_asaas ?? true);
 
   const limiteCadeirasBadge = Math.max(
     1,

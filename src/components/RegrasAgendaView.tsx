@@ -241,3 +241,4 @@ export const RegrasAgendaView: React.FC<RegrasAgendaViewProps> = ({
 };
 
 export default RegrasAgendaView;
+
