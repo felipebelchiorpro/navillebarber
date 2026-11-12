@@ -17,6 +17,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { pb, Barbearia, barbeariasService } from '../services/pocketbase';
+import { evolutionApi } from '../services/evolutionApi';
 
 export default function SuperAdminTenants() {
   const navigate = useNavigate();
@@ -111,6 +112,11 @@ export default function SuperAdminTenants() {
         pix_tipo_chave: 'cnpj',
         pix_chave_repasse: '',
         banco_nome: 'Nubank',
+      });
+
+      // Provisiona automaticamente instância isolada na Evolution API + templates de gatilho
+      evolutionApi.seedTenant(nova.id).catch((err) => {
+        console.warn('Tentativa de seed automatico Evolution API:', err);
       });
 
       setBarbearias(prev => [nova, ...prev]);
@@ -307,6 +313,42 @@ export default function SuperAdminTenants() {
                     <span className="text-[10px] font-bold text-red-400">Bloquear Acesso</span>
                   </>
                 )}
+              </div>
+            </div>
+
+            {/* Painel de WhatsApp / Instância Evolution da Barbearia */}
+            <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                    <MessageCircle size={16} />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">Instância WhatsApp Evolution API</h4>
+                    <p className="text-[10px] text-zinc-400">
+                      Instância: <code className="text-emerald-400 font-mono">{`naville_${(selectedTenant.slug || 'loja').replace(/[^a-zA-Z0-9_]/g, '')}_${(selectedTenant.id || '').slice(0, 8)}`}</code>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      setUpdating(true);
+                      await evolutionApi.seedTenant(selectedTenant.id);
+                      alert('Instância provisionada e templates de gatilhos sincronizados com sucesso na Evolution API!');
+                    } catch (err: any) {
+                      alert('Erro ao provisionar instância: ' + (err?.message || 'Verifique as variáveis de ambiente no Coolify.'));
+                    } finally {
+                      setUpdating(false);
+                    }
+                  }}
+                  disabled={updating}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw size={12} className={updating ? 'animate-spin' : ''} />
+                  Provisionar / Resetar Instância
+                </button>
               </div>
             </div>
           </div>
