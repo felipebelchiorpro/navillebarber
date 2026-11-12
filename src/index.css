@@ -175,13 +175,40 @@
   cursor: not-allowed;
 }
 
+/* Botão de confirmação: cor sólida única */
+.btn-gold {
+  background: #f97316;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 0.5rem 1.1rem;
+  border-radius: 0.5rem;
+  border: 1px solid #f97316;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  cursor: pointer;
+}
+
+.btn-gold:hover:not(:disabled) {
+  background: #ea580c;
+  border-color: #ea580c;
+}
+
+.btn-gold:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .btn-secondary {
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-muted);
   border: 1px solid var(--border-subtle);
   font-weight: 600;
-  font-size: 0.75rem;
-  padding: 0.38rem 0.85rem;
+  font-size: 0.8rem;
+  padding: 0.5rem 1.1rem;
   border-radius: 0.5rem;
   transition: all 0.2s ease;
   display: inline-flex;
