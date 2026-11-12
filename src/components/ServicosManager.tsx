@@ -52,6 +52,8 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
   const [isCategoriasModalOpen, setIsCategoriasModalOpen] = useState(false);
   const [newCatNome, setNewCatNome] = useState('');
   const [savingCat, setSavingCat] = useState(false);
+  const [editingCatId, setEditingCatId] = useState<string | null>(null);
+  const [editingCatNome, setEditingCatNome] = useState('');
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -186,6 +188,32 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
     } catch (err) {
       console.error('Erro ao criar categoria:', err);
       alert('Falha ao salvar nova categoria.');
+    } finally {
+      setSavingCat(false);
+    }
+  };
+
+  const handleSalvarEdicaoCategoria = async (catId?: string, defaultLabel?: string) => {
+    if (!editingCatNome.trim()) return;
+    setSavingCat(true);
+    try {
+      if (catId) {
+        // Categoria customizada existente no banco
+        await categoriasService.update(catId, { nome: editingCatNome.trim() });
+      } else if (defaultLabel) {
+        // Categoria padrão que o usuário está personalizando para a barbearia dele
+        await categoriasService.create({
+          barbearia: barbearia.id,
+          nome: editingCatNome.trim(),
+          ordem: categoriasBanco.length + 1
+        });
+      }
+      setEditingCatId(null);
+      setEditingCatNome('');
+      await carregarCategorias();
+    } catch (err) {
+      console.error('Erro ao atualizar categoria:', err);
+      alert('Falha ao atualizar categoria.');
     } finally {
       setSavingCat(false);
     }
@@ -1224,31 +1252,80 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
                         background: 'rgba(255, 255, 255, 0.03)',
                         border: '1px solid var(--border-subtle)',
                         borderRadius: '0.5rem',
-                        padding: '0.5rem 0.75rem'
+                        padding: '0.45rem 0.75rem',
+                        gap: '0.5rem'
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span className={`badge ${cat.badgeClass}`} style={{ fontSize: '0.65rem' }}>
-                          <Tag size={10} />
-                          {cat.label}
-                        </span>
-                        {cat.id ? (
-                          <span style={{ fontSize: '0.7rem', color: '#34d399' }}>Personalizada</span>
-                        ) : (
-                          <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>Padrão do Sistema</span>
-                        )}
-                      </div>
+                      {editingCatId === (cat.id || cat.key) ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
+                          <input
+                            type="text"
+                            value={editingCatNome}
+                            onChange={(e) => setEditingCatNome(e.target.value)}
+                            className="input-field"
+                            style={{ flex: 1, fontSize: '0.78rem', padding: '0.3rem 0.5rem' }}
+                            placeholder="Nome da categoria"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSalvarEdicaoCategoria(cat.id, cat.label)}
+                            disabled={savingCat || !editingCatNome.trim()}
+                            className="btn-primary"
+                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.7rem' }}
+                          >
+                            Salvar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setEditingCatId(null); setEditingCatNome(''); }}
+                            className="btn-secondary"
+                            style={{ padding: '0.3rem 0.5rem', fontSize: '0.7rem' }}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span className={`badge ${cat.badgeClass}`} style={{ fontSize: '0.65rem' }}>
+                              <Tag size={10} />
+                              {cat.label}
+                            </span>
+                            {cat.id ? (
+                              <span style={{ fontSize: '0.7rem', color: '#34d399' }}>Personalizada</span>
+                            ) : (
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>Padrão</span>
+                            )}
+                          </div>
 
-                      {cat.id && (
-                        <button
-                          type="button"
-                          onClick={() => handleExcluirCategoria(cat.id!, cat.label)}
-                          className="btn-danger"
-                          title="Remover categoria"
-                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCatId(cat.id || cat.key);
+                                setEditingCatNome(cat.label);
+                              }}
+                              className="btn-secondary"
+                              title="Editar nome da categoria"
+                              style={{ padding: '0.25rem 0.45rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center' }}
+                            >
+                              <Pencil size={11} />
+                            </button>
+
+                            {cat.id && (
+                              <button
+                                type="button"
+                                onClick={() => handleExcluirCategoria(cat.id!, cat.label)}
+                                className="btn-danger"
+                                title="Remover categoria"
+                                style={{ padding: '0.25rem 0.45rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center' }}
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            )}
+                          </div>
+                        </>
                       )}
                     </div>
                   ))}

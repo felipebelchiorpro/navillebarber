@@ -403,3 +403,4 @@ export const BaseClientesView: React.FC<BaseClientesViewProps> = ({ barbearia })
   );
 };
 export default BaseClientesView;
+
