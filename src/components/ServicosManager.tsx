@@ -17,9 +17,11 @@ import {
   Coins,
   Star,
   Image as ImageIcon,
-  FolderPlus
+  FolderPlus,
+  Upload,
+  Camera
 } from 'lucide-react';
-import { Barbearia, Servico, servicosService, CategoriaServico, categoriasService } from '../services/pocketbase';
+import { Barbearia, Servico, servicosService, CategoriaServico, categoriasService, pb } from '../services/pocketbase';
 
 interface ServicosManagerProps {
   barbearia: Barbearia;
@@ -36,6 +38,45 @@ const CATEGORIAS_PADRAO: Record<
   promocao: { label: 'Promoção', badgeClass: 'gold-badge', desc: 'Promoções especiais e cortes promocionais' },
   tratamento: { label: 'Tratamento', badgeClass: 'badge-green', desc: 'Hidratação, selagem e química' },
   clube: { label: 'Clube VIP', badgeClass: 'gold-badge', desc: 'Serviços exclusivos para membros VIP' },
+};
+
+// Categorias padrão aceitas pelo PocketBase para validação estrita do select
+const PB_ALLOWED_CATEGORIAS = new Set([
+  'cabelo',
+  'barba',
+  'combos',
+  'tratamento',
+  'clube',
+  'geral',
+  'outros',
+  'outro',
+  'sobrancelha',
+  'degrade',
+  'promocao',
+  'barboterapia',
+  'quimica',
+  'infantil',
+  'depilacao',
+  'massagem',
+  'estetica',
+  'tintura',
+  'limpeza de pele',
+  'selagem',
+  'alisamento',
+  'luzes',
+  'platinado',
+]);
+
+export const getServiceImgUrl = (servico: Servico): string => {
+  if (servico.foto_url) return servico.foto_url;
+  if (servico.foto) {
+    try {
+      return pb.files.getUrl(servico, servico.foto);
+    } catch {
+      return '';
+    }
+  }
+  return '';
 };
 
 export const ServicosManager: React.FC<ServicosManagerProps> = ({
@@ -70,6 +111,8 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
   const [descricao, setDescricao] = useState('');
   const [destaque, setDestaque] = useState(false);
   const [fotoUrl, setFotoUrl] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [showUrlInput, setShowUrlInput] = useState(false);
 
   // Comissão Flexível por Serviço
   const [comissaoPersonalizadaAtiva, setComissaoPersonalizadaAtiva] = useState(false);
@@ -78,6 +121,65 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
 
   // Delete confirmation
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Compressão e Upload de Foto do Dispositivo
+  const handleImageFileSelect = (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Por favor, selecione um arquivo de imagem válido (JPG, PNG, WebP).');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert('A imagem deve ter no máximo 10MB.');
+      return;
+    }
+
+    setUploadingImage(true);
+    const reader = new FileReader();
+    reader.onload = (loadEvent) => {
+      const dataUrl = loadEvent.target?.result as string;
+      if (!dataUrl) {
+        setUploadingImage(false);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        const maxSide = 600;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxSide || height > maxSide) {
+          if (width > height) {
+            height = Math.round((height * maxSide) / width);
+            width = maxSide;
+          } else {
+            width = Math.round((width * maxSide) / height);
+            height = maxSide;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          setFotoUrl(canvas.toDataURL('image/jpeg', 0.85));
+        } else {
+          setFotoUrl(dataUrl);
+        }
+        setUploadingImage(false);
+      };
+      img.onerror = () => {
+        setFotoUrl(dataUrl);
+        setUploadingImage(false);
+      };
+      img.src = dataUrl;
+    };
+    reader.onerror = () => {
+      alert('Erro ao carregar a imagem do dispositivo.');
+      setUploadingImage(false);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const carregarCategorias = async () => {
     try {
@@ -115,11 +217,13 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
     setNome('');
     setPreco('');
     setDuracaoMinutos('30');
-    setCategoria('cabelo');
+    setCategoria(todasCategorias.length > 0 ? todasCategorias[0].key : 'cabelo');
     setAtivo(true);
     setDescricao('');
     setDestaque(false);
     setFotoUrl('');
+    setUploadingImage(false);
+    setShowUrlInput(false);
     setComissaoPersonalizadaAtiva(false);
     setComissaoTipo('padrao_barbeiro');
     setComissaoValor('35');
@@ -129,14 +233,18 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
 
   const abrirModalEditar = (servico: Servico) => {
     setEditingServico(servico);
-    setNome(servico.nome);
-    setPreco(servico.preco.toString());
-    setDuracaoMinutos(servico.duracao_minutos.toString());
-    setCategoria(servico.categoria || 'cabelo');
-    setAtivo(servico.ativo);
+    setNome(servico.nome || '');
+    setPreco(servico.preco != null ? servico.preco.toString() : '');
+    setDuracaoMinutos(servico.duracao_minutos != null ? servico.duracao_minutos.toString() : '30');
+    const catVal = (servico.categoria_nome || servico.categoria || 'cabelo').toLowerCase();
+    setCategoria(catVal);
+    setAtivo(servico.ativo !== false);
     setDescricao(servico.descricao || '');
     setDestaque(Boolean(servico.destaque));
-    setFotoUrl(servico.foto_url || servico.foto || '');
+    const currentFoto = servico.foto_url || (servico.foto ? pb.files.getUrl(servico, servico.foto) : '');
+    setFotoUrl(currentFoto);
+    setUploadingImage(false);
+    setShowUrlInput(Boolean(servico.foto_url && !servico.foto_url.startsWith('data:')));
     setComissaoPersonalizadaAtiva(Boolean(servico.comissao_personalizada_ativa));
     setComissaoTipo(servico.comissao_tipo || 'padrao_barbeiro');
     setComissaoValor((servico.comissao_valor ?? 35).toString());
@@ -273,35 +381,37 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
     setSubmitting(true);
     const comissaoNum = parseFloat(comissaoValor.replace(',', '.')) || 0;
 
+    const catNormalized = (categoria || 'cabelo').trim().toLowerCase();
+    const selectedCatObj = todasCategorias.find(
+      (c) => c.key === catNormalized || c.label.toLowerCase() === catNormalized
+    );
+    const catLabel = selectedCatObj ? selectedCatObj.label : (categoria.trim() || 'Cabelo');
+    const catId = selectedCatObj?.id || '';
+    const pbCategoriaSafe = PB_ALLOWED_CATEGORIAS.has(catNormalized) ? catNormalized : 'outros';
+
+    const payload = {
+      nome: nome.trim(),
+      preco: precoNum,
+      duracao_minutos: duracaoNum,
+      categoria: pbCategoriaSafe,
+      categoria_nome: catLabel,
+      categoria_id: catId,
+      ativo,
+      descricao: descricao.trim() || undefined,
+      destaque,
+      foto_url: fotoUrl.trim() || undefined,
+      comissao_personalizada_ativa: comissaoPersonalizadaAtiva,
+      comissao_tipo: comissaoPersonalizadaAtiva ? comissaoTipo : 'padrao_barbeiro',
+      comissao_valor: comissaoPersonalizadaAtiva ? comissaoNum : 0,
+    };
+
     try {
       if (editingServico) {
-        await servicosService.update(editingServico.id, {
-          nome: nome.trim(),
-          preco: precoNum,
-          duracao_minutos: duracaoNum,
-          categoria: categoria.trim().toLowerCase() as any,
-          ativo,
-          descricao: descricao.trim() || undefined,
-          destaque,
-          foto_url: fotoUrl.trim() || undefined,
-          comissao_personalizada_ativa: comissaoPersonalizadaAtiva,
-          comissao_tipo: comissaoPersonalizadaAtiva ? comissaoTipo : 'padrao_barbeiro',
-          comissao_valor: comissaoPersonalizadaAtiva ? comissaoNum : 0,
-        });
+        await servicosService.update(editingServico.id, payload);
       } else {
         await servicosService.create({
           barbearia_id: barbearia.id,
-          nome: nome.trim(),
-          preco: precoNum,
-          duracao_minutos: duracaoNum,
-          categoria: categoria.trim().toLowerCase() as any,
-          ativo,
-          descricao: descricao.trim() || undefined,
-          destaque,
-          foto_url: fotoUrl.trim() || undefined,
-          comissao_personalizada_ativa: comissaoPersonalizadaAtiva,
-          comissao_tipo: comissaoPersonalizadaAtiva ? comissaoTipo : 'padrao_barbeiro',
-          comissao_valor: comissaoPersonalizadaAtiva ? comissaoNum : 0,
+          ...payload,
         });
       }
 
@@ -309,7 +419,8 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
       await carregarServicos();
     } catch (err: any) {
       console.error('Erro ao salvar serviço:', err);
-      setFormError(err.message || 'Erro ao comunicar com o PocketBase.');
+      const msg = err.data?.message || err.message || 'Erro ao comunicar com o servidor.';
+      setFormError(msg);
     } finally {
       setSubmitting(false);
     }
@@ -337,8 +448,11 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
   // Filtragem de serviços
   const servicosFiltrados = useMemo(() => {
     return servicos.filter((s) => {
+      const catKey = (s.categoria_nome || s.categoria || '').toLowerCase().trim();
       const matchCategoria =
-        selectedCategoria === 'todas' || s.categoria === selectedCategoria;
+        selectedCategoria === 'todas' ||
+        catKey === selectedCategoria ||
+        (s.categoria || '').toLowerCase().trim() === selectedCategoria;
       const matchSearch =
         s.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (s.descricao && s.descricao.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -464,7 +578,10 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
             Todas ({totalServicos})
           </button>
           {todasCategorias.map((cat) => {
-            const count = servicos.filter((s) => (s.categoria || '').toLowerCase() === cat.key).length;
+            const count = servicos.filter((s) => {
+              const catKey = (s.categoria_nome || s.categoria || '').toLowerCase().trim();
+              return catKey === cat.key || (s.categoria || '').toLowerCase().trim() === cat.key;
+            }).length;
             const isSelected = selectedCategoria === cat.key;
             return (
               <button
@@ -514,10 +631,12 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.75rem' }}>
           {servicosFiltrados.map((servico) => {
-            const catInfo = todasCategorias.find((c) => c.key === (servico.categoria || '').toLowerCase()) || {
-              label: servico.categoria,
+            const catKey = (servico.categoria_nome || servico.categoria || '').toLowerCase().trim();
+            const catInfo = todasCategorias.find((c) => c.key === catKey || c.label.toLowerCase() === catKey) || {
+              label: servico.categoria_nome || servico.categoria || 'Geral',
               badgeClass: 'badge-gray',
             };
+            const imgUrl = getServiceImgUrl(servico);
 
             return (
               <div
@@ -587,9 +706,9 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
 
                   {/* Service Header with optional Image */}
                   <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start', marginBottom: '0.65rem' }}>
-                    {(servico.foto_url || servico.foto) && (
+                    {imgUrl && (
                       <img
-                        src={servico.foto_url || servico.foto}
+                        src={imgUrl}
                         alt={servico.nome}
                         style={{
                           width: '3.4rem',
@@ -801,98 +920,202 @@ export const ServicosManager: React.FC<ServicosManagerProps> = ({
                 />
               </div>
 
-              {/* Foto / Imagem Promocional do Serviço */}
+              {/* Foto / Imagem do Serviço com Upload do Dispositivo */}
               <div
                 style={{
                   background: 'rgba(255, 255, 255, 0.02)',
                   border: '1px solid var(--border-subtle)',
-                  borderRadius: '0.65rem',
-                  padding: '0.75rem 0.9rem',
+                  borderRadius: '0.75rem',
+                  padding: '0.85rem 1rem',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '0.5rem',
+                  gap: '0.65rem',
                 }}
               >
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 600, color: '#f8fafc' }}>
-                  <ImageIcon style={{ width: '0.9rem', height: '0.9rem', color: '#fbbf24' }} />
-                  Foto / Imagem do Serviço
-                </label>
-
-                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                  {fotoUrl ? (
-                    <img
-                      src={fotoUrl}
-                      alt="Prévia Serviço"
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', fontWeight: 600, color: '#f8fafc' }}>
+                    <ImageIcon style={{ width: '0.95rem', height: '0.95rem', color: '#fbbf24' }} />
+                    Foto / Imagem do Serviço
+                  </label>
+                  {fotoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setFotoUrl('')}
                       style={{
-                        width: '3.5rem',
-                        height: '3.5rem',
-                        borderRadius: '0.5rem',
-                        objectFit: 'cover',
-                        border: '1px solid rgba(245, 158, 11, 0.4)',
-                        flexShrink: 0,
-                      }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        width: '3.5rem',
-                        height: '3.5rem',
-                        borderRadius: '0.5rem',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px dashed var(--border-subtle)',
+                        background: 'transparent',
+                        color: '#f87171',
+                        border: 'none',
+                        fontSize: '0.72rem',
+                        cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'var(--text-dim)',
-                        flexShrink: 0,
+                        gap: '0.25rem',
+                        padding: 0
                       }}
                     >
-                      <Scissors style={{ width: '1.25rem', height: '1.25rem' }} />
-                    </div>
+                      <Trash2 size={12} /> Remover Foto
+                    </button>
                   )}
+                </div>
 
-                  <div style={{ flex: 1, minWidth: '200px' }}>
-                    <input
-                      type="url"
-                      className="input-field"
-                      placeholder="URL da imagem (ex: foto de corte + cerveja, barba, etc.)"
-                      value={fotoUrl}
-                      onChange={(e) => setFotoUrl(e.target.value)}
-                      style={{ fontSize: '0.8rem', padding: '0.45rem 0.65rem', width: '100%' }}
-                    />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>Sugestões rápidas:</span>
-                      {[
-                        { label: 'Corte + Cerveja', url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=80' },
-                        { label: 'Cabelo & Barba', url: 'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?auto=format&fit=crop&w=400&q=80' },
-                        { label: 'Barboterapia', url: 'https://images.unsplash.com/photo-1621607512214-68297480165e?auto=format&fit=crop&w=400&q=80' },
-                        { label: 'Degradê', url: 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=400&q=80' },
-                      ].map((preset, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setFotoUrl(preset.url)}
+                <div style={{ display: 'flex', gap: '0.9rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  {/* Preview com clique para abrir seletor de arquivos */}
+                  <label
+                    title="Clique para escolher foto do dispositivo"
+                    style={{
+                      width: '4.5rem',
+                      height: '4.5rem',
+                      borderRadius: '0.65rem',
+                      position: 'relative',
+                      cursor: 'pointer',
+                      overflow: 'hidden',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      border: fotoUrl ? '2px solid #f59e0b' : '2px dashed rgba(255, 255, 255, 0.2)',
+                      flexShrink: 0,
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    {fotoUrl ? (
+                      <>
+                        <img
+                          src={fotoUrl}
+                          alt="Prévia do Serviço"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                        <div
                           style={{
-                            background: fotoUrl === preset.url ? '#d97706' : 'rgba(255, 255, 255, 0.05)',
-                            color: fotoUrl === preset.url ? '#ffffff' : 'var(--text-muted)',
-                            border: '1px solid var(--border-subtle)',
-                            borderRadius: '0.35rem',
-                            padding: '0.12rem 0.45rem',
-                            fontSize: '0.68rem',
-                            cursor: 'pointer',
+                            position: 'absolute',
+                            inset: 0,
+                            background: 'rgba(0,0,0,0.45)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            opacity: 0,
+                            transition: 'opacity 0.2s',
+                            color: '#fff',
+                            gap: '0.15rem',
                           }}
+                          onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                          onMouseLeave={(e) => (e.currentTarget.style.opacity = '0')}
                         >
-                          {preset.label}
-                        </button>
-                      ))}
+                          <Camera size={16} />
+                          <span style={{ fontSize: '0.6rem', fontWeight: 600 }}>Trocar</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '0.2rem' }}>
+                        <Camera size={20} style={{ margin: '0 auto 0.2rem', color: '#f59e0b' }} />
+                        <span style={{ fontSize: '0.62rem', display: 'block', lineHeight: 1.1 }}>Enviar foto</span>
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      disabled={uploadingImage}
+                      onChange={(e) => handleImageFileSelect(e.target.files?.[0])}
+                    />
+                  </label>
+
+                  <div style={{ flex: 1, minWidth: '220px', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <label
+                        className="btn-secondary"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          cursor: 'pointer',
+                          fontSize: '0.78rem',
+                          padding: '0.4rem 0.75rem',
+                          background: 'rgba(245, 158, 11, 0.15)',
+                          border: '1px solid rgba(245, 158, 11, 0.4)',
+                          color: '#fbbf24',
+                          borderRadius: '0.45rem',
+                          fontWeight: 600,
+                        }}
+                      >
+                        <Upload size={14} />
+                        <span>{uploadingImage ? 'Processando Imagem...' : 'Subir Foto do Dispositivo'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                          disabled={uploadingImage}
+                          onChange={(e) => handleImageFileSelect(e.target.files?.[0])}
+                        />
+                      </label>
+
                       {fotoUrl && (
-                        <button
-                          type="button"
-                          onClick={() => setFotoUrl('')}
-                          style={{ background: 'transparent', color: '#f87171', border: 'none', fontSize: '0.68rem', cursor: 'pointer', marginLeft: 'auto' }}
-                        >
-                          Limpar
-                        </button>
+                        <span style={{ fontSize: '0.72rem', color: '#34d399', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                          <CheckCircle2 size={13} /> Foto pronta para salvar
+                        </span>
+                      )}
+                    </div>
+
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+                      Envie uma imagem do corte ou barba da galeria ou câmera do seu celular / computador.
+                    </span>
+
+                    {/* Toggle para presets ou URL externa */}
+                    <div style={{ marginTop: '0.2rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowUrlInput(!showUrlInput)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#94a3b8',
+                          fontSize: '0.7rem',
+                          textDecoration: 'underline',
+                          cursor: 'pointer',
+                          padding: 0,
+                        }}
+                      >
+                        {showUrlInput ? 'Ocultar opções de link / modelos prontos' : 'Ou colar link de imagem / modelos prontos'}
+                      </button>
+
+                      {showUrlInput && (
+                        <div style={{ marginTop: '0.45rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <input
+                            type="url"
+                            className="input-field"
+                            placeholder="https://exemplo.com/foto-corte.jpg"
+                            value={fotoUrl}
+                            onChange={(e) => setFotoUrl(e.target.value)}
+                            style={{ fontSize: '0.78rem', padding: '0.4rem 0.6rem', width: '100%' }}
+                          />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.65rem', color: 'var(--text-dim)' }}>Sugestões rápidas:</span>
+                            {[
+                              { label: 'Corte + Cerveja', url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=80' },
+                              { label: 'Cabelo & Barba', url: 'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?auto=format&fit=crop&w=400&q=80' },
+                              { label: 'Barboterapia', url: 'https://images.unsplash.com/photo-1621607512214-68297480165e?auto=format&fit=crop&w=400&q=80' },
+                              { label: 'Degradê', url: 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=400&q=80' },
+                            ].map((preset, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => setFotoUrl(preset.url)}
+                                style={{
+                                  background: fotoUrl === preset.url ? '#d97706' : 'rgba(255, 255, 255, 0.05)',
+                                  color: fotoUrl === preset.url ? '#ffffff' : 'var(--text-muted)',
+                                  border: '1px solid var(--border-subtle)',
+                                  borderRadius: '0.35rem',
+                                  padding: '0.12rem 0.45rem',
+                                  fontSize: '0.65rem',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {preset.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>

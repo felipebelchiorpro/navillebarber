@@ -166,6 +166,7 @@ export interface Servico {
   duracao_minutos: number;
   categoria: 'cabelo' | 'barba' | 'combos' | 'tratamento' | 'clube' | string;
   categoria_id?: string;
+  categoria_nome?: string;
   ativo: boolean;
   descricao?: string;
   destaque?: boolean;
@@ -521,6 +522,8 @@ export const servicosService = {
     preco: number;
     duracao_minutos: number;
     categoria: string;
+    categoria_id?: string;
+    categoria_nome?: string;
     ativo: boolean;
     descricao?: string;
     destaque?: boolean;

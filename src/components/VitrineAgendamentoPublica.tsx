@@ -222,10 +222,14 @@ export const VitrineAgendamentoPublica: React.FC<VitrineAgendamentoPublicaProps>
   };
 
   const getServiceThumbnail = (serv: Servico) => {
-    if (serv.foto) {
-      return pb.files.getUrl(serv, serv.foto);
-    }
     if (serv.foto_url) return serv.foto_url;
+    if (serv.foto) {
+      try {
+        return pb.files.getUrl(serv, serv.foto);
+      } catch {
+        // fallback
+      }
+    }
     const nome = serv.nome.toLowerCase();
     if (nome.includes('cabelo') && nome.includes('barba')) {
       return 'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?auto=format&fit=crop&w=400&q=80';
