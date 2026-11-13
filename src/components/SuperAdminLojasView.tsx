@@ -489,34 +489,61 @@ export default function SuperAdminLojasView() {
       setSavingDonoLogin(true);
 
       let savedUser: any = null;
+      let sucessoBackend = false;
 
-      if (donoExistente) {
-        // Atualiza usuário existente
-        const patchPayload: any = {
-          name: nomeFinal,
-          email: emailFinal,
-          papel: 'dono',
-          pode_acessar_admin: true,
-          barbearia_id: selectedTenant.id,
-          status: 'ativo'
-        };
-        if (passFinal) {
-          patchPayload.password = passFinal;
-          patchPayload.passwordConfirm = passFinal;
-        }
-        savedUser = await pb.collection('users').update(donoExistente.id, patchPayload);
-      } else {
-        // Cria novo usuário
-        savedUser = await pb.collection('users').create({
-          name: nomeFinal,
-          email: emailFinal,
-          password: passFinal,
-          passwordConfirm: passFinal,
-          papel: 'dono',
-          pode_acessar_admin: true,
-          barbearia_id: selectedTenant.id,
-          status: 'ativo'
+      // 1. Tenta via endpoint administrativo no servidor (executa com credencial root)
+      try {
+        const res = await fetch(`/api/admin/tenants/${selectedTenant.id}/owner-access`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: nomeFinal,
+            email: emailFinal,
+            password: passFinal
+          })
         });
+        if (res.ok) {
+          const data = await res.json();
+          savedUser = data.user;
+          sucessoBackend = true;
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          console.warn('Backend retornou erro, tentando fallback direto:', errData);
+        }
+      } catch (backendErr) {
+        console.warn('Erro ao chamar backend, tentando fallback direto:', backendErr);
+      }
+
+      // 2. Se backend não respondeu (ex: offline), fallback direto PocketBase
+      if (!sucessoBackend) {
+        if (donoExistente) {
+          const patchPayload: any = {
+            name: nomeFinal,
+            papel: 'dono',
+            pode_acessar_admin: true,
+            barbearia_id: selectedTenant.id,
+            status: 'ativo'
+          };
+          if (emailFinal === donoExistente.email) {
+            patchPayload.email = emailFinal;
+          }
+          if (passFinal) {
+            patchPayload.password = passFinal;
+            patchPayload.passwordConfirm = passFinal;
+          }
+          savedUser = await pb.collection('users').update(donoExistente.id, patchPayload);
+        } else {
+          savedUser = await pb.collection('users').create({
+            name: nomeFinal,
+            email: emailFinal,
+            password: passFinal,
+            passwordConfirm: passFinal,
+            papel: 'dono',
+            pode_acessar_admin: true,
+            barbearia_id: selectedTenant.id,
+            status: 'ativo'
+          });
+        }
       }
 
       // Atualiza também os dados de e-mail e proprietário no registro da barbearia
@@ -524,11 +551,11 @@ export default function SuperAdminLojasView() {
         email: emailFinal,
         proprietario: nomeFinal,
         nome_proprietario: nomeFinal
-      });
+      }).catch(() => ({ ...selectedTenant, email: emailFinal, proprietario: nomeFinal }));
 
       setSelectedTenant(updatedTenant);
       setBarbearias(prev => prev.map(b => b.id === updatedTenant.id ? { ...b, ...updatedTenant } : b));
-      setDonoExistente(savedUser);
+      setDonoExistente(savedUser || { id: selectedTenant.id, email: emailFinal, name: nomeFinal });
 
       const urlAcesso = `${window.location.origin}/b/${selectedTenant.slug}/admin`;
       setDadosAcessoSalvos({
@@ -540,7 +567,8 @@ export default function SuperAdminLojasView() {
       dispararToast('sucesso', `Login do dono salvo com sucesso para ${selectedTenant.nome}!`, 'Credenciais Atualizadas');
     } catch (err: any) {
       console.error('Erro ao salvar login do dono:', err);
-      dispararToast('erro', err.message || 'Falha ao salvar usuário no PocketBase.', 'Erro');
+      const msg = err?.data?.message || err?.message || 'Falha ao salvar usuário no PocketBase.';
+      dispararToast('erro', msg, 'Erro ao Salvar');
     } finally {
       setSavingDonoLogin(false);
     }

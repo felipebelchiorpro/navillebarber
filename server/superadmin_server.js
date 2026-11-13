@@ -312,6 +312,108 @@ app.patch('/api/admin/tenants/:id/toggle-status', requireSuperUser, async (req, 
   }
 });
 
+// Helper de cliente PocketBase autenticado como superuser
+async function getAdminPB() {
+  const adminEmail = process.env.POCKETBASE_ADMIN_EMAIL || 'admin@navillebarber.com';
+  const adminPass = process.env.POCKETBASE_ADMIN_PASSWORD || 'Password123!';
+  
+  const client = new PocketBase(PB_URL);
+  try {
+    await client.collection('_superusers').authWithPassword(adminEmail, adminPass);
+    return client;
+  } catch {
+    try {
+      const publicClient = new PocketBase('https://app.navillebarber.pro');
+      await publicClient.collection('_superusers').authWithPassword(adminEmail, adminPass);
+      return publicClient;
+    } catch (e2) {
+      console.warn('Erro ao autenticar superuser no PocketBase:', e2.message);
+      return client;
+    }
+  }
+}
+
+// Criar ou Redefinir Credenciais de Acesso do Dono (SuperAdmin)
+app.post('/api/admin/tenants/:id/owner-access', async (req, res) => {
+  const { id } = req.params;
+  const { name, email, password } = req.body;
+
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ error: 'E-mail inválido.' });
+  }
+
+  try {
+    const adminClient = await getAdminPB();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanName = (name || '').trim();
+    const cleanPass = (password || '').trim();
+
+    // 1. Busca se já existe um usuário vinculado a esta barbearia ou com este e-mail
+    let existingUser = null;
+    try {
+      const list = await adminClient.collection('users').getFullList({
+        filter: `barbearia_id = "${id}" || email = "${cleanEmail}"`
+      });
+      if (list.length > 0) {
+        existingUser = list[0];
+      }
+    } catch (findErr) {
+      console.warn('Aviso ao buscar usuário existente:', findErr.message);
+    }
+
+    let savedUser = null;
+
+    if (existingUser) {
+      const patch = {
+        name: cleanName || existingUser.name,
+        email: cleanEmail,
+        papel: 'dono',
+        pode_acessar_admin: true,
+        barbearia_id: id,
+        status: 'ativo'
+      };
+      if (cleanPass) {
+        patch.password = cleanPass;
+        patch.passwordConfirm = cleanPass;
+      }
+      savedUser = await adminClient.collection('users').update(existingUser.id, patch);
+    } else {
+      if (!cleanPass || cleanPass.length < 6) {
+        return res.status(400).json({ error: 'A senha de criação deve ter no mínimo 6 caracteres.' });
+      }
+      savedUser = await adminClient.collection('users').create({
+        name: cleanName,
+        email: cleanEmail,
+        password: cleanPass,
+        passwordConfirm: cleanPass,
+        papel: 'dono',
+        pode_acessar_admin: true,
+        barbearia_id: id,
+        status: 'ativo'
+      });
+    }
+
+    // 2. Atualiza registro na coleção barbearias
+    await adminClient.collection('barbearias').update(id, {
+      email: cleanEmail,
+      proprietario: cleanName,
+      nome_proprietario: cleanName
+    }).catch(() => {});
+
+    return res.json({
+      success: true,
+      user: {
+        id: savedUser.id,
+        email: savedUser.email,
+        name: savedUser.name
+      }
+    });
+  } catch (err) {
+    console.error('Erro ao definir acesso do dono:', err);
+    return res.status(500).json({ error: err.message || 'Erro ao salvar acesso do proprietário.' });
+  }
+});
+
 // ============================================================
 // 4. SINCRONIZAÇÃO SEGURA ASAAS NO BACKEND (SEM EXPOR CHAVE)
 // ============================================================
