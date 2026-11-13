@@ -78,23 +78,39 @@ const TenantRoute: React.FC<{
   onLogout,
 }) => {
   const navigate = useNavigate();
-  const killSwitch = saasService.verificarKillSwitch(barbearia, faturas);
-  const deveBloquearAcesso = killSwitch.isBloqueado && user?.papel !== 'superadmin';
+  const location = useLocation();
 
-  // Se não autenticado no subdomínio app.navillebarber.pro acessando a raiz, redireciona para a landing page oficial
-  if (!user) {
+  // Token & Usuário ativo do PocketBase sempre priorizado
+  const activeUser = user || (pb.authStore.isValid && pb.authStore.record ? (pb.authStore.record as unknown as Usuario) : null);
+
+  // Se o usuário está autenticado e pertence a uma barbearia, redireciona preservando o slug do tenant
+  if (activeUser && (activeUser.papel === 'dono' || activeUser.role === 'proprietario' || activeUser.barbearia_id)) {
+    const slug = barbearia?.slug;
+    if (slug) {
+      const sub = location.pathname.replace(/^\//, '');
+      const target = sub && sub !== 'dashboard' ? `/b/${slug}/admin/${sub}` : `/b/${slug}/admin`;
+      return <Navigate to={target} replace />;
+    }
+  }
+
+  // Se não autenticado, redireciona para a tela oficial de login
+  if (!activeUser) {
     const isAppSubdomain = window.location.hostname.includes('app.navillebarber.pro');
     const isRoot = window.location.pathname === '/' || window.location.pathname === '';
     if (isAppSubdomain && isRoot) {
       window.location.href = 'https://navillebarber.pro';
       return null;
     }
+    return <Navigate to="/login" replace />;
   }
 
-  if (user && !deveBloquearAcesso) {
+  const killSwitch = saasService.verificarKillSwitch(barbearia, faturas);
+  const deveBloquearAcesso = killSwitch.isBloqueado && activeUser.papel !== 'superadmin';
+
+  if (!deveBloquearAcesso) {
     return (
       <DashboardAdminView
-        user={user}
+        user={activeUser}
         barbearia={barbearia || devFallbackBarb}
         onBarbeariaUpdated={onBarbeariaUpdated}
         onLogout={onLogout}
@@ -107,7 +123,7 @@ const TenantRoute: React.FC<{
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <Header
-        user={user}
+        user={activeUser}
         barbearia={barbearia}
         onLogout={onLogout}
         onOpenVitrine={(s) => navigate(`/b/${s}`)}
@@ -115,17 +131,13 @@ const TenantRoute: React.FC<{
       />
 
       <main style={{ flex: 1 }}>
-        {!user ? (
-          <LoginForm onSuccess={onLoginSuccess} />
-        ) : (
-          <TenantBlockedCustomerView
-            user={user}
-            barbearia={barbearia}
-            faturaPendente={killSwitch.faturaPendente}
-            motivoBloqueio={killSwitch.mensagem}
-            onRegularizado={onRegularizado}
-          />
-        )}
+        <TenantBlockedCustomerView
+          user={activeUser}
+          barbearia={barbearia}
+          faturaPendente={killSwitch.faturaPendente}
+          motivoBloqueio={killSwitch.mensagem}
+          onRegularizado={onRegularizado}
+        />
       </main>
 
       <footer
@@ -137,7 +149,7 @@ const TenantRoute: React.FC<{
           fontSize: '0.78rem',
         }}
       >
-        Naville Barber © 2026 • Vitrine Pública B2C & Gestão Integrada (PocketBase Local)
+        Naville Barber © 2026 • Gestão Integrada & Multi-Tenant
       </footer>
     </div>
   );
@@ -185,11 +197,11 @@ const TenantAdminRoute: React.FC<{
   }
 
   // Se não autenticado no PocketBase, redireciona para login do tenant
-  if (!user && !pb.authStore.isValid) {
-    return <Navigate to={`/b/${slug || 'belchior'}/login`} replace />;
-  }
+  const currentUser = user || (pb.authStore.isValid && pb.authStore.record ? (pb.authStore.record as unknown as Usuario) : null);
 
-  const currentUser = user || (pb.authStore.record as unknown as Usuario);
+  if (!currentUser) {
+    return <Navigate to={`/b/${slug || 'barbearia-ls'}/login`} replace />;
+  }
 
   return (
     <DashboardAdminView
@@ -204,13 +216,31 @@ const TenantAdminRoute: React.FC<{
 };
 
 export const App: React.FC = () => {
-  const [user, setUser] = useState<Usuario | null>(null);
+  const [user, setUser] = useState<Usuario | null>(() => {
+    return pb.authStore.isValid && pb.authStore.record ? (pb.authStore.record as unknown as Usuario) : null;
+  });
   const [barbearia, setBarbearia] = useState<Barbearia | null>(null);
   const [faturas, setFaturas] = useState<Fatura[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Carrega estado de sessão ao iniciar
+  // Carrega estado de sessão ao iniciar e escuta mudanças no token PocketBase
   useEffect(() => {
+    const unsub = pb.authStore.onChange(async (token, record) => {
+      if (record && pb.authStore.isValid) {
+        const u = record as unknown as Usuario;
+        setUser(u);
+        const barbId = u.barbearia_id || (u as any).barbearia;
+        if (barbId) {
+          try {
+            const b = await pb.collection('barbearias').getOne<Barbearia>(barbId);
+            setBarbearia(b);
+          } catch {}
+        }
+      } else {
+        setUser(null);
+      }
+    });
+
     const initAuth = async () => {
       try {
         if (pb.authStore.isValid && pb.authStore.record) {
@@ -237,27 +267,6 @@ export const App: React.FC = () => {
               console.warn('Faturas ainda não carregadas:', e);
             }
           }
-        } else {
-          // Apenas em ambiente estritamente local (localhost/127.0.0.1) faz login mock
-          const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-          if (isLocalhost && import.meta.env.DEV) {
-            try {
-              const { user: authUser, barbearia: authBarb } = await authService.login(
-                'dono@zerograu.com',
-                'Password123!'
-              );
-              setUser(authUser);
-              if (authBarb) {
-                setBarbearia(authBarb);
-                try {
-                  const fats = await faturasService.list(authBarb.id);
-                  setFaturas(fats);
-                } catch (e) {}
-              }
-            } catch (autoLoginErr) {
-              console.warn('Auto-login dev fallback:', autoLoginErr);
-            }
-          }
         }
       } catch (err) {
         console.error('Erro ao restaurar sessão:', err);
@@ -267,6 +276,9 @@ export const App: React.FC = () => {
     };
 
     initAuth();
+    return () => {
+      unsub();
+    };
   }, []);
 
   // Recarrega faturas quando a barbearia for alterada
@@ -352,6 +364,16 @@ export const App: React.FC = () => {
       <Route path="/b/:slug/terminal" element={<TerminalMaquininhaPWAView />} />
 
       {/* 3. PAINEL ADMINISTRATIVO DO TENANT (DONO / GERENTE) COM SUPORTE A SUB-ROTAS */}
+      <Route
+        path="/b/:slug/admin"
+        element={
+          <TenantAdminRoute
+            user={user}
+            onBarbeariaUpdated={handleBarbeariaUpdated}
+            onLogout={handleLogout}
+          />
+        }
+      />
       <Route
         path="/b/:slug/admin/*"
         element={

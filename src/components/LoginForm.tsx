@@ -73,7 +73,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSuccess }) => {
             Acesso ao <span className="gold-gradient-text">Naville Barber</span>
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-            Ambiente Local • Módulo 01 Core & Multi-Tenant
+            Painel de Gestão & Multi-Tenant
           </p>
         </div>
 
@@ -100,14 +100,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSuccess }) => {
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           <div>
             <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.45rem' }}>
-              E-mail do Utilizador
+              E-mail de Acesso
             </label>
             <div style={{ position: 'relative' }}>
               <Mail style={{ position: 'absolute', left: '0.95rem', top: '50%', transform: 'translateY(-50%)', width: '1.1rem', height: '1.1rem', color: 'var(--text-dim)' }} />
               <input
                 type="email"
                 className="input-field"
-                placeholder="ex: dono@zerograu.com"
+                placeholder="ex: dono@barbearia.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 style={{ paddingLeft: '2.65rem' }}
@@ -152,22 +152,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSuccess }) => {
             )}
           </button>
         </form>
-
-        {/* Quick Test Seed Fill Helper */}
-        <div style={{ marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-subtle)' }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem', textAlign: 'center' }}>
-            Credenciais do Módulo 01 (Seed Local)
-          </div>
-
-          <button
-            type="button"
-            onClick={handleFillTestCredentials}
-            className="btn-secondary"
-            style={{ width: '100%', justifyContent: 'center', fontSize: '0.82rem', padding: '0.65rem' }}
-          >
-            <Sparkles style={{ width: '0.95rem', height: '0.95rem', color: '#fbbf24' }} />
-            <span>Usar Utilizador Dono: <strong>dono@zerograu.com</strong></span>
-          </button>
 
           <div style={{ marginTop: '0.75rem', fontSize: '0.72rem', color: 'var(--text-dim)', textAlign: 'center' }}>
             Vinculado à barbearia <strong>Zero Grau</strong> (slug: <code>zero-grau</code>)
