@@ -37,7 +37,13 @@ import {
   Zap,
   Monitor,
   SmartphoneNfc,
-  RotateCcw
+  RotateCcw,
+  KeyRound,
+  Lock,
+  Eye,
+  EyeOff,
+  Mail,
+  Phone
 } from 'lucide-react';
 import SplitPaymentView from './SplitPaymentView';
 import { pb } from '../lib/pocketbase';
@@ -122,6 +128,18 @@ export default function SuperAdminLojasView() {
   const [editandoCobrancaId, setEditandoCobrancaId] = useState<string | null>(null);
   const [novoVencimentoInput, setNovoVencimentoInput] = useState('');
   const [savingVencimento, setSavingVencimento] = useState(false);
+
+  // Estados para Criação / Gestão de Login do Dono (SuperAdmin)
+  const [isLoginDonoModalOpen, setIsLoginDonoModalOpen] = useState(false);
+  const [donoNomeInput, setDonoNomeInput] = useState('');
+  const [donoEmailInput, setDonoEmailInput] = useState('');
+  const [donoSenhaInput, setDonoSenhaInput] = useState('');
+  const [showDonoSenha, setShowDonoSenha] = useState(false);
+  const [savingDonoLogin, setSavingDonoLogin] = useState(false);
+  const [donoExistente, setDonoExistente] = useState<any | null>(null);
+  const [loadingDonoExistente, setLoadingDonoExistente] = useState(false);
+  const [copiedAcesso, setCopiedAcesso] = useState(false);
+  const [dadosAcessoSalvos, setDadosAcessoSalvos] = useState<{ email: string; pass: string; url: string } | null>(null);
 
   // Estados locais editáveis de valores dos módulos
   const [valorCadeira, setValorCadeira] = useState<number>(25);
@@ -398,6 +416,147 @@ export default function SuperAdminLojasView() {
     } finally {
       setSavingComprador(false);
     }
+  };
+
+  const handleAbrirLoginDono = async (tenantOverride?: any) => {
+    const tenant = tenantOverride || selectedTenant;
+    if (!tenant) return;
+    setIsLoginDonoModalOpen(true);
+    setLoadingDonoExistente(true);
+    setDadosAcessoSalvos(null);
+    setCopiedAcesso(false);
+    setShowDonoSenha(false);
+
+    try {
+      // 1. Busca se já existe um usuário na coleção 'users' vinculado a esta barbearia ou com o mesmo email
+      let userRecord: any = null;
+      try {
+        const users = await pb.collection('users').getFullList({
+          filter: `barbearia_id = "${tenant.id}" || (email != "" && email = "${tenant.email || ''}")`
+        });
+        if (users.length > 0) {
+          userRecord = users[0];
+        }
+      } catch (err) {
+        console.warn('Erro ao buscar usuário existente:', err);
+      }
+
+      setDonoExistente(userRecord);
+      setDonoNomeInput(userRecord?.name || tenant.proprietario || tenant.nome_proprietario || '');
+      setDonoEmailInput(userRecord?.email || tenant.email || `dono@${tenant.slug}.com`);
+      setDonoSenhaInput('');
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingDonoExistente(false);
+    }
+  };
+
+  const handleGerarSenhaDono = () => {
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz@#!';
+    let rand = '';
+    for (let i = 0; i < 8; i++) {
+      rand += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setDonoSenhaInput(rand);
+    setShowDonoSenha(true);
+  };
+
+  const handleSalvarLoginDono = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTenant) return;
+
+    const emailFinal = donoEmailInput.trim().toLowerCase();
+    const nomeFinal = donoNomeInput.trim();
+    const passFinal = donoSenhaInput.trim();
+
+    if (!emailFinal || !emailFinal.includes('@')) {
+      dispararToast('aviso', 'Informe um e-mail válido para o login do dono.', 'E-mail Inválido');
+      return;
+    }
+
+    if (!donoExistente && passFinal.length < 6) {
+      dispararToast('aviso', 'A senha de criação deve ter no mínimo 6 caracteres.', 'Senha Curta');
+      return;
+    }
+
+    if (passFinal && passFinal.length < 6) {
+      dispararToast('aviso', 'A nova senha deve ter no mínimo 6 caracteres.', 'Senha Curta');
+      return;
+    }
+
+    try {
+      setSavingDonoLogin(true);
+
+      let savedUser: any = null;
+
+      if (donoExistente) {
+        // Atualiza usuário existente
+        const patchPayload: any = {
+          name: nomeFinal,
+          email: emailFinal,
+          papel: 'dono',
+          pode_acessar_admin: true,
+          barbearia_id: selectedTenant.id,
+          status: 'ativo'
+        };
+        if (passFinal) {
+          patchPayload.password = passFinal;
+          patchPayload.passwordConfirm = passFinal;
+        }
+        savedUser = await pb.collection('users').update(donoExistente.id, patchPayload);
+      } else {
+        // Cria novo usuário
+        savedUser = await pb.collection('users').create({
+          name: nomeFinal,
+          email: emailFinal,
+          password: passFinal,
+          passwordConfirm: passFinal,
+          papel: 'dono',
+          pode_acessar_admin: true,
+          barbearia_id: selectedTenant.id,
+          status: 'ativo'
+        });
+      }
+
+      // Atualiza também os dados de e-mail e proprietário no registro da barbearia
+      const updatedTenant = await pb.collection('barbearias').update(selectedTenant.id, {
+        email: emailFinal,
+        proprietario: nomeFinal,
+        nome_proprietario: nomeFinal
+      });
+
+      setSelectedTenant(updatedTenant);
+      setBarbearias(prev => prev.map(b => b.id === updatedTenant.id ? { ...b, ...updatedTenant } : b));
+      setDonoExistente(savedUser);
+
+      const urlAcesso = `${window.location.origin}/b/${selectedTenant.slug}/admin`;
+      setDadosAcessoSalvos({
+        email: emailFinal,
+        pass: passFinal || '(mantida a anterior)',
+        url: urlAcesso
+      });
+
+      dispararToast('sucesso', `Login do dono salvo com sucesso para ${selectedTenant.nome}!`, 'Credenciais Atualizadas');
+    } catch (err: any) {
+      console.error('Erro ao salvar login do dono:', err);
+      dispararToast('erro', err.message || 'Falha ao salvar usuário no PocketBase.', 'Erro');
+    } finally {
+      setSavingDonoLogin(false);
+    }
+  };
+
+  const handleCopiarDadosDono = () => {
+    if (!dadosAcessoSalvos || !selectedTenant) return;
+    const texto = `💈 *Acesso ao Painel da Barbearia - ${selectedTenant.nome}*\n\n` +
+      `🌐 *Painel:* ${dadosAcessoSalvos.url}\n` +
+      `📧 *E-mail:* ${dadosAcessoSalvos.email}\n` +
+      `🔑 *Senha:* ${dadosAcessoSalvos.pass}\n\n` +
+      `_Acesse o link acima e entre com seu e-mail e senha para gerenciar seus agendamentos, equipe e caixa._`;
+    navigator.clipboard.writeText(texto);
+    setCopiedAcesso(true);
+    setTimeout(() => setCopiedAcesso(false), 3000);
+    dispararToast('sucesso', 'Mensagem de acesso copiada para a área de transferência!', 'Copiado');
   };
 
   const handleAbrirEditarBarbearia = (tenant?: any) => {
@@ -869,6 +1028,16 @@ export default function SuperAdminLojasView() {
                 >
                   <Edit3 size={13} />
                   <span>Editar Barbearia</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleAbrirLoginDono()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 shadow-sm transition-all cursor-pointer"
+                  title="Criar ou alterar credenciais de login do Dono da Barbearia"
+                >
+                  <KeyRound size={13} />
+                  <span>Login do Dono</span>
                 </button>
 
                 <a
@@ -2364,6 +2533,196 @@ export default function SuperAdminLojasView() {
       )}
 
 
+
+      {/* MODAL: CRIAR OU GERENCIAR LOGIN DO DONO */}
+      {isLoginDonoModalOpen && selectedTenant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 animate-in fade-in duration-200 overflow-y-auto">
+          <div className="relative w-full max-w-lg rounded-2xl bg-zinc-950 border border-white/10 p-6 shadow-2xl flex flex-col gap-4 text-white">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                  <KeyRound size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    Acesso do Dono • {selectedTenant.nome}
+                  </h3>
+                  <p className="text-[11px] text-zinc-400">Crie ou redefina o login e senha de acesso administrativo</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setIsLoginDonoModalOpen(false); setDadosAcessoSalvos(null); }}
+                className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {loadingDonoExistente ? (
+              <div className="py-8 flex flex-col items-center justify-center gap-2 text-zinc-400 text-xs">
+                <RefreshCw size={18} className="animate-spin text-amber-400" />
+                <span>Buscando conta do proprietário...</span>
+              </div>
+            ) : (
+              <form onSubmit={handleSalvarLoginDono} className="flex flex-col gap-4">
+                {/* Status da Conta */}
+                <div className={`p-3 rounded-xl border flex items-center justify-between ${
+                  donoExistente
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-200'
+                    : 'bg-amber-500/10 border-amber-500/20 text-amber-200'
+                }`}>
+                  <div className="flex items-center gap-2.5">
+                    {donoExistente ? <ShieldCheck size={16} className="text-emerald-400" /> : <AlertCircle size={16} className="text-amber-400" />}
+                    <div>
+                      <p className="text-xs font-bold">
+                        {donoExistente ? 'Conta de Acesso Ativa' : 'Nenhum Login Criado Ainda'}
+                      </p>
+                      <p className="text-[10px] text-zinc-400">
+                        {donoExistente
+                          ? `Usuário ID: ${donoExistente.id} • Cadastrado no sistema`
+                          : 'Crie abaixo o e-mail e a senha inicial para o proprietário acessar o painel.'}
+                      </p>
+                    </div>
+                  </div>
+                  {donoExistente && (
+                    <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-500/30 uppercase">
+                      Ativo
+                    </span>
+                  )}
+                </div>
+
+                {/* Nome do Dono */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-bold text-zinc-300">Nome do Proprietário *</label>
+                  <input
+                    type="text"
+                    required
+                    value={donoNomeInput}
+                    onChange={(e) => setDonoNomeInput(e.target.value)}
+                    placeholder="Ex: Leonardo Soares"
+                    className="bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500 transition-colors"
+                  />
+                </div>
+
+                {/* E-mail de Acesso */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-bold text-zinc-300">E-mail de Login *</label>
+                  <div className="relative">
+                    <Mail size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                    <input
+                      type="email"
+                      required
+                      value={donoEmailInput}
+                      onChange={(e) => setDonoEmailInput(e.target.value)}
+                      placeholder="Ex: dono@barbearials.com"
+                      className="w-full bg-white/[0.03] border border-white/10 rounded-lg pl-8 pr-3 py-2 text-xs text-white outline-none focus:border-amber-500 transition-colors font-mono"
+                    />
+                  </div>
+                  <span className="text-[10px] text-zinc-500">
+                    Este e-mail será usado pelo dono para entrar em /b/{selectedTenant.slug}/admin
+                  </span>
+                </div>
+
+                {/* Senha */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-zinc-300">
+                      {donoExistente ? 'Nova Senha (deixe em branco para não alterar)' : 'Senha de Acesso *'}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleGerarSenhaDono}
+                      className="text-[10px] font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30 transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <Sparkles size={10} /> Gerar Senha
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <Lock size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                    <input
+                      type={showDonoSenha ? 'text' : 'password'}
+                      value={donoSenhaInput}
+                      onChange={(e) => setDonoSenhaInput(e.target.value)}
+                      placeholder={donoExistente ? 'Digite apenas se quiser redefinir...' : 'Crie uma senha (mínimo 6 dígitos)'}
+                      className="w-full bg-white/[0.03] border border-white/10 rounded-lg pl-8 pr-9 py-2 text-xs text-white outline-none focus:border-amber-500 transition-colors font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowDonoSenha(!showDonoSenha)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-0.5 cursor-pointer"
+                    >
+                      {showDonoSenha ? <EyeOff size={13} /> : <Eye size={13} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Card de Credenciais Prontas para Envio */}
+                {dadosAcessoSalvos && (
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-col gap-2.5 animate-in fade-in duration-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                        <CheckCircle2 size={13} className="text-emerald-400" /> Dados Prontos para Enviar ao Dono
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopiarDadosDono}
+                        className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-[10px] font-bold border border-amber-500/40 transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        {copiedAcesso ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                        <span>{copiedAcesso ? 'Copiado!' : 'Copiar Acesso'}</span>
+                      </button>
+                    </div>
+
+                    <div className="bg-black/40 rounded-lg p-2.5 font-mono text-[11px] text-zinc-300 flex flex-col gap-1 border border-white/5">
+                      <div><span className="text-zinc-500">Link:</span> <span className="text-emerald-400 underline">{dadosAcessoSalvos.url}</span></div>
+                      <div><span className="text-zinc-500">Login:</span> <span className="text-white font-bold">{dadosAcessoSalvos.email}</span></div>
+                      <div><span className="text-zinc-500">Senha:</span> <span className="text-amber-300 font-bold">{dadosAcessoSalvos.pass}</span></div>
+                    </div>
+
+                    {selectedTenant.telefone && (
+                      <a
+                        href={`https://wa.me/55${selectedTenant.telefone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                          `💈 *Acesso ao Painel da Barbearia - ${selectedTenant.nome}*\n\n` +
+                          `🌐 *Painel:* ${dadosAcessoSalvos.url}\n` +
+                          `📧 *E-mail:* ${dadosAcessoSalvos.email}\n` +
+                          `🔑 *Senha:* ${dadosAcessoSalvos.pass}\n\n` +
+                          `_Acesse o link acima com seu e-mail e senha para gerenciar seus agendamentos e equipe._`
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                      >
+                        <MessageSquare size={13} />
+                        <span>Enviar no WhatsApp do Dono</span>
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {/* Rodapé e Botões */}
+                <div className="flex items-center justify-end gap-2 border-t border-white/5 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => { setIsLoginDonoModalOpen(false); setDadosAcessoSalvos(null); }}
+                    className="px-4 py-2 rounded-lg text-xs font-semibold text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                  >
+                    Fechar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingDonoLogin}
+                    className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {savingDonoLogin ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
+                    <span>{savingDonoLogin ? 'Salvando...' : donoExistente ? 'Salvar Acesso do Dono' : 'Criar Acesso do Dono'}</span>
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* MODAL / OVERLAY: SPLIT DE PAGAMENTOS & SUBCONTAS ASAAS */}
       {isSplitModalOpen && selectedTenant && (
