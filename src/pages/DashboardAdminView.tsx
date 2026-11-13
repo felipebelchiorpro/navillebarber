@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Link, useLocation, Routes, Route } from 'react-router-dom';
+import { Link, useLocation, useParams, Routes, Route } from 'react-router-dom';
 import {
   Scissors,
   Users,
@@ -230,15 +230,29 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
   }, [timeFilter, todayIso]);
 
   const location = useLocation();
+  const { slug } = useParams<{ slug?: string }>();
 
-  const isRouteActive = (routePath: string) => {
-    if (routePath === '/' || routePath === '/dashboard') {
-      return location.pathname === '/' || location.pathname === '/dashboard';
+  // Preserva o prefixo da barbearia atual para navegação multi-tenant estrita (/b/:slug/admin)
+  const currentSlug = slug || (barbearia?.slug && location.pathname.startsWith(`/b/${barbearia.slug}`) ? barbearia.slug : undefined);
+  const basePath = currentSlug ? `/b/${currentSlug}/admin` : '';
+
+  const getLink = (subPath: string) => {
+    if (!basePath) return subPath;
+    if (subPath === '/' || subPath === '') return basePath;
+    return `${basePath}${subPath.startsWith('/') ? subPath : `/${subPath}`}`;
+  };
+
+  const isRouteActive = (routeSubPath: string) => {
+    const fullTarget = basePath ? `${basePath}${routeSubPath === '/' ? '' : routeSubPath}` : routeSubPath;
+    if (routeSubPath === '/' || routeSubPath === '/dashboard') {
+      return location.pathname === fullTarget || (basePath ? (location.pathname === `${basePath}/` || location.pathname === basePath) : false);
     }
-    if (routePath === '/grade') {
-      return location.pathname === '/grade' || location.pathname === '/agenda';
+    if (routeSubPath === '/grade') {
+      const gradeTarget = basePath ? `${basePath}/grade` : '/grade';
+      const agendaTarget = basePath ? `${basePath}/agenda` : '/agenda';
+      return location.pathname === gradeTarget || location.pathname === agendaTarget;
     }
-    return location.pathname === routePath || location.pathname.startsWith(`${routePath}/`);
+    return location.pathname === fullTarget || location.pathname.startsWith(`${fullTarget}/`);
   };
 
   const getItemClass = (routePath: string, hasRightElement = false) => {
@@ -541,7 +555,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
         </p>
       </div>
       <Link
-        to="/"
+        to={getLink('/')}
         className="mt-3 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white font-semibold text-xs border border-white/10 transition-colors"
       >
         Voltar à Visão Geral
@@ -596,21 +610,21 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
           <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mt-3 mb-1.5 px-3">Atendimentos & Caixa</p>
           
           {/* Item Ativo (Exemplo: Visão Geral / Dashboard) */}
-          <Link className={getItemClass('/')} to="/">
+          <Link className={getItemClass('/')} to={getLink('/')}>
             <LayoutDashboard size={16}/> Visão Geral
           </Link>
           
-          <Link className={getItemClass('/agendamentos')} to="/agendamentos">
+          <Link className={getItemClass('/agendamentos')} to={getLink('/agendamentos')}>
             <Calendar size={16}/> Agendamentos
           </Link>
           
-          <Link className={getItemClass('/pdv')} to="/pdv">
+          <Link className={getItemClass('/pdv')} to={getLink('/pdv')}>
             <MonitorSmartphone size={16}/> PDV & Caixa do Dia
           </Link>
           
           {/* MÓDULO FINANCEIRO: EXCLUSIVO SE ATIVO NO SUPERADMIN */}
           {temModuloFinanceiro && (
-            <Link className={getItemClass('/gastos')} to="/gastos">
+            <Link className={getItemClass('/gastos')} to={getLink('/gastos')}>
               <Receipt size={16}/> Controle de Gastos
             </Link>
           )}
@@ -619,41 +633,41 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
           {/* CATEGORIA: GESTÃO DA BARBEARIA */}
           <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mt-5 mb-1.5 px-3">Gestão da Barbearia</p>
           
-          <Link className={getItemClass('/profissionais', true)} to="/profissionais">
+          <Link className={getItemClass('/profissionais', true)} to={getLink('/profissionais')}>
             <div className="flex items-center gap-2.5"><Users size={16}/> Profissionais</div>
             <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-full border border-emerald-500/20 font-semibold">
               {profissionaisList.length}/{limiteCadeirasBadge}
             </span>
           </Link>
 
-          <Link className={getItemClass('/equipe-acesso', true)} to="/equipe-acesso">
+          <Link className={getItemClass('/equipe-acesso', true)} to={getLink('/equipe-acesso')}>
             <div className="flex items-center gap-2.5"><KeyRound size={16}/> Acesso dos Barbeiros</div>
             <span className="text-[9px] bg-orange-500/10 text-orange-400 px-1.5 py-0.5 rounded-full border border-orange-500/20 font-semibold">Login</span>
           </Link>
           
-          <Link className={getItemClass('/servicos', true)} to="/servicos">
+          <Link className={getItemClass('/servicos', true)} to={getLink('/servicos')}>
             <div className="flex items-center gap-2.5"><Scissors size={16}/> Serviços & Preços</div>
             <span className="text-[9px] bg-white/5 text-zinc-400 px-1.5 py-0.5 rounded-full font-semibold">
               {servicesList.length}
             </span>
           </Link>
           
-          <Link className={getItemClass('/estoque')} to="/estoque">
+          <Link className={getItemClass('/estoque')} to={getLink('/estoque')}>
             <Package size={16}/> Produtos & Estoque
           </Link>
 
-          <Link className={getItemClass('/vitrine', true)} to="/vitrine">
+          <Link className={getItemClass('/vitrine', true)} to={getLink('/vitrine')}>
             <div className="flex items-center gap-2.5"><Store size={16}/> Meu Espaço & Vitrine</div>
             <span className="text-[9px] bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded-full border border-amber-500/20 font-semibold">Vitrine</span>
           </Link>
 
-          <Link className={getItemClass('/clientes')} to="/clientes">
+          <Link className={getItemClass('/clientes')} to={getLink('/clientes')}>
             <UsersRound size={16}/> Base de Clientes
           </Link>
 
           {/* MÓDULO CLUBE DE ASSINATURAS: EXCLUSIVO SE ATIVO NO SUPERADMIN */}
           {temModuloClube && (
-            <Link className={getItemClass('/clube', true)} to="/clube">
+            <Link className={getItemClass('/clube', true)} to={getLink('/clube')}>
               <div className="flex items-center gap-2.5"><Crown size={16}/> Clube de Assinaturas</div>
               <span className="text-[9px] bg-orange-500/10 text-orange-500 px-1.5 py-0.5 rounded-full border border-orange-500/20 font-semibold shadow-[0_0_10px_rgba(249,115,22,0.2)]">VIP</span>
             </Link>
@@ -663,13 +677,13 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
           {/* CATEGORIA: CONFIGURAÇÕES & INTEGRAÇÕES */}
           <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mt-5 mb-1.5 px-3">Config. & Integrações</p>
           
-          <Link className={getItemClass('/regras')} to="/regras">
+          <Link className={getItemClass('/regras')} to={getLink('/regras')}>
             <Settings size={16}/> Regras da Agenda
           </Link>
           
           {/* MÓDULO WHATSAPP: EXCLUSIVO SE ATIVO NO SUPERADMIN */}
           {temModuloWhatsApp && (
-            <Link className={getItemClass('/whatsapp', true)} to="/whatsapp">
+            <Link className={getItemClass('/whatsapp', true)} to={getLink('/whatsapp')}>
               <div className="flex items-center gap-2.5"><MessageCircle size={16}/> WhatsApp Conexão</div>
               <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1 font-semibold"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>Online</span>
             </Link>
@@ -677,7 +691,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
 
           {/* MÓDULO SPLIT DE PAGAMENTOS & TERMINAIS: EXCLUSIVO SE ATIVO NO SUPERADMIN */}
           {temModuloSplit && (
-            <Link className={getItemClass('/split', true)} to="/split">
+            <Link className={getItemClass('/split', true)} to={getLink('/split')}>
               <div className="flex items-center gap-2.5"><GitFork size={16}/> Split & Terminais</div>
               <span className="text-[9px] bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded-full border border-indigo-500/20 font-semibold">D+0</span>
             </Link>
@@ -719,9 +733,10 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
       <main className="flex-1 h-full flex flex-col pt-4 pr-6 pb-6 overflow-y-auto custom-scrollbar relative z-10 gap-5">
         <Routes>
           <Route path="/" element={<VisaoGeral />} />
-          <Route path="/dashboard" element={<VisaoGeral />} />
+          <Route path="" element={<VisaoGeral />} />
+          <Route path="dashboard" element={<VisaoGeral />} />
           <Route
-            path="/agendamentos"
+            path="agendamentos"
             element={
               <AgendaManager
                 barbearia={validBarbearia}
@@ -730,10 +745,10 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
               />
             }
           />
-          <Route path="/grade" element={<AgendaView barbearia={barbearia} />} />
-          <Route path="/agenda" element={<AgendaView barbearia={barbearia} />} />
+          <Route path="grade" element={<AgendaView barbearia={barbearia} />} />
+          <Route path="agenda" element={<AgendaView barbearia={barbearia} />} />
           <Route
-            path="/pdv"
+            path="pdv"
             element={
               <ProdutosManager
                 barbearia={validBarbearia}
@@ -743,7 +758,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/comandas"
+            path="comandas"
             element={
               <ProdutosManager
                 barbearia={validBarbearia}
@@ -753,7 +768,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/gastos"
+            path="gastos"
             element={
               temModuloFinanceiro ? (
                 <RelatoriosManager
@@ -766,7 +781,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/profissionais"
+            path="profissionais"
             element={
               <ProfissionaisManager
                 barbearia={validBarbearia}
@@ -775,7 +790,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/equipe-acesso"
+            path="equipe-acesso"
             element={
               <EquipeAcessoView
                 barbearia={validBarbearia}
@@ -786,11 +801,11 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/servicos"
+            path="servicos"
             element={<ServicosManager barbearia={validBarbearia} />}
           />
           <Route
-            path="/estoque"
+            path="estoque"
             element={
               <ProdutosManager
                 barbearia={validBarbearia}
@@ -800,7 +815,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/produtos"
+            path="produtos"
             element={
               <ProdutosManager
                 barbearia={validBarbearia}
@@ -810,7 +825,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/vitrine"
+            path="vitrine"
             element={
               <VitrineView
                 barbearia={validBarbearia}
@@ -820,13 +835,13 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/clientes"
+            path="clientes"
             element={
               <BaseClientesView barbearia={validBarbearia} />
             }
           />
           <Route
-            path="/clube"
+            path="clube"
             element={
               temModuloClube ? (
                 <ClubeVipManager
@@ -840,7 +855,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/clube_vip"
+            path="clube_vip"
             element={
               temModuloClube ? (
                 <ClubeVipManager
@@ -854,7 +869,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/regras"
+            path="regras"
             element={
               <RegrasAgendaView
                 barbearia={validBarbearia}
@@ -863,7 +878,16 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/whatsapp"
+            path="regras-agenda"
+            element={
+              <RegrasAgendaView
+                barbearia={validBarbearia}
+                onBarbeariaUpdated={onBarbeariaUpdated}
+              />
+            }
+          />
+          <Route
+            path="whatsapp"
             element={
               temModuloWhatsApp ? (
                 <WhatsAppManager
@@ -876,7 +900,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/automacoes"
+            path="automacoes"
             element={
               temModuloWhatsApp ? (
                 <WhatsAppManager
@@ -889,7 +913,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/mensagens"
+            path="mensagens"
             element={
               temModuloWhatsApp ? (
                 <MensagensConfigView
@@ -902,7 +926,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/templates_whatsapp"
+            path="templates_whatsapp"
             element={
               temModuloWhatsApp ? (
                 <MensagensConfigView
@@ -915,7 +939,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/relatorios"
+            path="relatorios"
             element={
               temModuloFinanceiro ? (
                 <RelatoriosManager
@@ -928,7 +952,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/split"
+            path="split"
             element={
               temModuloSplit ? (
                 <SplitPaymentView
@@ -941,7 +965,7 @@ export const DashboardAdminView: React.FC<DashboardAdminViewProps> = ({
             }
           />
           <Route
-            path="/plano_saas"
+            path="plano_saas"
             element={
               <PlanoAssinaturaManager
                 user={user}

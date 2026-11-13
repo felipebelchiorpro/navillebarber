@@ -351,9 +351,9 @@ export const App: React.FC = () => {
       <Route path="/terminal/:codigo" element={<TerminalMaquininhaPWAView />} />
       <Route path="/b/:slug/terminal" element={<TerminalMaquininhaPWAView />} />
 
-      {/* 3. PAINEL ADMINISTRATIVO DO TENANT (DONO / GERENTE) */}
+      {/* 3. PAINEL ADMINISTRATIVO DO TENANT (DONO / GERENTE) COM SUPORTE A SUB-ROTAS */}
       <Route
-        path="/b/:slug/admin"
+        path="/b/:slug/admin/*"
         element={
           <TenantAdminRoute
             user={user}
