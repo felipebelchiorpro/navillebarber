@@ -237,9 +237,9 @@ export const VitrineView: React.FC<VitrineViewProps> = ({
 
       // Define targetId (usa o ID real cadastrado no PocketBase)
       const targetId =
-        barbearia?.id && barbearia.id !== 'dev_barb' && barbearia.id !== 'f248k5y236q412x'
+        (barbearia?.id && barbearia.id !== 'dev_barb' && barbearia.id !== 'f248k5y236q412x')
           ? barbearia.id
-          : 'ca42u8j6x8o514w';
+          : ((pb.authStore.record as any)?.barbearia_id || (pb.authStore.record as any)?.barbearia || 'ca42u8j6x8o514w');
 
       let saved: Barbearia;
 
@@ -306,9 +306,12 @@ export const VitrineView: React.FC<VitrineViewProps> = ({
       setTimeout(() => setMensagemSucesso(false), 3500);
     } catch (err: any) {
       console.error('Erro ao salvar barbearia no PocketBase:', err);
+      const detalheErro = err?.data?.data 
+        ? Object.entries(err.data.data).map(([k, v]: any) => `${k}: ${v.message}`).join(', ')
+        : '';
       alert(
         `Erro ao salvar no servidor: ${
-          err?.data?.message || err?.message || 'Falha de comunicação com o PocketBase'
+          detalheErro || err?.data?.message || err?.message || 'Falha de comunicação com o PocketBase'
         }`
       );
     } finally {

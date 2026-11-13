@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import http from 'http';
+import https from 'https';
 import jwt from 'jsonwebtoken';
 import PocketBase from 'pocketbase';
 import path from 'path';
@@ -27,7 +29,54 @@ const distPath = path.resolve(__dirname, '../dist');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+
+const PORT = process.env.PORT || 3001;
+const JWT_SECRET = process.env.JWT_SECRET || 'superadmin-secret-jwt-key-naville-2026';
+const PB_URL = process.env.POCKETBASE_URL || 'http://127.0.0.1:8090';
+
+// 1. PROXY POCKETBASE DIRETO (Streaming bruto de alta fidelidade para JSON, multipart/form-data e uploads)
+// Roda antes de express.json() para não corromper ou consumir streams de upload de arquivos/imagens
+const proxyPocketBase = (req, res) => {
+  const targetUrl = `${PB_URL}${req.originalUrl}`;
+  try {
+    const parsedUrl = new URL(targetUrl);
+    const client = parsedUrl.protocol === 'https:' ? https : http;
+
+    const headers = { ...req.headers };
+    delete headers.host;
+
+    const proxyReq = client.request(
+      parsedUrl,
+      {
+        method: req.method,
+        headers: headers,
+      },
+      (proxyRes) => {
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        proxyRes.pipe(res);
+      }
+    );
+
+    proxyReq.on('error', (err) => {
+      console.error(`Erro ao fazer proxy para PocketBase (${targetUrl}):`, err.message);
+      if (!res.headersSent) {
+        res.status(502).json({ error: 'PocketBase indisponível.' });
+      }
+    });
+
+    req.pipe(proxyReq);
+  } catch (err) {
+    console.error(`Erro ao montar URL de proxy PocketBase:`, err.message);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Erro interno no proxy do PocketBase.' });
+    }
+  }
+};
+
+app.use(['/api/collections', '/api/files', '/api/health', '/api/settings', '/api/batch', '/_'], proxyPocketBase);
+
+// Parser de JSON para rotas de negócio do SuperAdmin, Asaas e WhatsApp
+app.use(express.json({ limit: '50mb' }));
 
 // Servir arquivos estáticos do frontend (com no-cache em HTML/SW para evitar app preso em versão antiga no celular)
 if (fs.existsSync(distPath)) {
@@ -52,10 +101,6 @@ if (fs.existsSync(distPath)) {
     })
   );
 }
-
-const PORT = process.env.PORT || 3001;
-const JWT_SECRET = process.env.JWT_SECRET || 'superadmin-secret-jwt-key-naville-2026';
-const PB_URL = process.env.POCKETBASE_URL || 'http://127.0.0.1:8090';
 
 const pb = new PocketBase(PB_URL);
 pb.autoCancellation(false);
@@ -1056,40 +1101,8 @@ app.post('/api/whatsapp/notify-agendamento', async (req, res) => {
 });
 
 // ============================================================
-// 5. PROXY POCKETBASE & SPA FALLBACK
+// 5. SPA FALLBACK (Express 5 compatível)
 // ============================================================
-app.use(['/api/collections', '/api/files', '/api/health', '/api/settings', '/api/batch', '/_'], async (req, res) => {
-  const targetUrl = `${PB_URL}${req.originalUrl}`;
-  try {
-    const headers = { ...req.headers };
-    delete headers.host;
-
-    const options = {
-      method: req.method,
-      headers: headers,
-    };
-
-    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
-      if (Buffer.isBuffer(req.body)) {
-        options.body = req.body;
-      } else if (typeof req.body === 'object') {
-        options.body = JSON.stringify(req.body);
-        headers['content-type'] = 'application/json';
-      }
-    }
-
-    const pbRes = await fetch(targetUrl, options);
-    res.status(pbRes.status);
-    pbRes.headers.forEach((val, key) => {
-      if (key !== 'content-encoding') res.setHeader(key, val);
-    });
-    const buffer = await pbRes.arrayBuffer();
-    return res.send(Buffer.from(buffer));
-  } catch (err) {
-    console.error(`Erro ao fazer proxy para PocketBase (${targetUrl}):`, err.message);
-    return res.status(502).json({ error: 'PocketBase indisponível.' });
-  }
-});
 
 // SPA fallback para React Router (Express 5 compatível)
 app.use((req, res) => {
