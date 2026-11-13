@@ -1351,9 +1351,24 @@ export const AgendaManager: React.FC<AgendaManagerProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="btn-gold"
                   disabled={savingAppointment || !slotValidation.valido}
-                  style={{ opacity: !slotValidation.valido ? 0.5 : 1 }}
+                  className="cursor-pointer transition-all hover:brightness-110 active:scale-95"
+                  style={{
+                    background: '#f59e0b',
+                    color: '#09090b',
+                    fontWeight: 800,
+                    fontSize: '0.85rem',
+                    padding: '0.6rem 1.35rem',
+                    borderRadius: '0.5rem',
+                    border: '1px solid #d97706',
+                    boxShadow: '0 4px 14px rgba(245, 158, 11, 0.35)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.4rem',
+                    opacity: (!slotValidation.valido || savingAppointment) ? 0.5 : 1,
+                    cursor: (!slotValidation.valido || savingAppointment) ? 'not-allowed' : 'pointer'
+                  }}
                 >
                   {savingAppointment ? 'Salvando...' : 'Confirmar Agendamento'}
                 </button>
@@ -1454,8 +1469,24 @@ export const AgendaManager: React.FC<AgendaManagerProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="btn-gold"
                   disabled={savingBlock}
+                  className="cursor-pointer transition-all hover:brightness-110 active:scale-95"
+                  style={{
+                    background: '#f59e0b',
+                    color: '#09090b',
+                    fontWeight: 800,
+                    fontSize: '0.85rem',
+                    padding: '0.6rem 1.35rem',
+                    borderRadius: '0.5rem',
+                    border: '1px solid #d97706',
+                    boxShadow: '0 4px 14px rgba(245, 158, 11, 0.35)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.4rem',
+                    opacity: savingBlock ? 0.5 : 1,
+                    cursor: savingBlock ? 'not-allowed' : 'pointer'
+                  }}
                 >
                   {savingBlock ? 'Salvando...' : 'Salvar Bloqueio'}
                 </button>

@@ -363,6 +363,10 @@ app.post('/api/admin/tenants/:id/owner-access', async (req, res) => {
 
     let savedUser = null;
 
+    if (cleanPass && cleanPass.length < 8) {
+      return res.status(400).json({ error: 'A senha deve ter no mínimo 8 caracteres.' });
+    }
+
     if (existingUser) {
       const patch = {
         name: cleanName || existingUser.name,
@@ -378,8 +382,8 @@ app.post('/api/admin/tenants/:id/owner-access', async (req, res) => {
       }
       savedUser = await adminClient.collection('users').update(existingUser.id, patch);
     } else {
-      if (!cleanPass || cleanPass.length < 6) {
-        return res.status(400).json({ error: 'A senha de criação deve ter no mínimo 6 caracteres.' });
+      if (!cleanPass || cleanPass.length < 8) {
+        return res.status(400).json({ error: 'A senha de criação deve ter no mínimo 8 caracteres.' });
       }
       savedUser = await adminClient.collection('users').create({
         name: cleanName,
@@ -410,7 +414,8 @@ app.post('/api/admin/tenants/:id/owner-access', async (req, res) => {
     });
   } catch (err) {
     console.error('Erro ao definir acesso do dono:', err);
-    return res.status(500).json({ error: err.message || 'Erro ao salvar acesso do proprietário.' });
+    const validationMsg = err?.data?.data?.password?.message || err?.data?.data?.email?.message || err?.data?.message;
+    return res.status(400).json({ error: validationMsg || err.message || 'Erro ao salvar acesso do proprietário.' });
   }
 });
 

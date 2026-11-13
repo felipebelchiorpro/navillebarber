@@ -455,7 +455,7 @@ export default function SuperAdminLojasView() {
   const handleGerarSenhaDono = () => {
     const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz@#!';
     let rand = '';
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 10; i++) {
       rand += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     setDonoSenhaInput(rand);
@@ -475,13 +475,13 @@ export default function SuperAdminLojasView() {
       return;
     }
 
-    if (!donoExistente && passFinal.length < 6) {
-      dispararToast('aviso', 'A senha de criação deve ter no mínimo 6 caracteres.', 'Senha Curta');
+    if (!donoExistente && passFinal.length < 8) {
+      dispararToast('aviso', 'A senha de criação deve ter no mínimo 8 caracteres.', 'Senha Muito Curta');
       return;
     }
 
-    if (passFinal && passFinal.length < 6) {
-      dispararToast('aviso', 'A nova senha deve ter no mínimo 6 caracteres.', 'Senha Curta');
+    if (passFinal && passFinal.length < 8) {
+      dispararToast('aviso', 'A nova senha deve ter no mínimo 8 caracteres (requisito de segurança do sistema).', 'Senha Muito Curta');
       return;
     }
 
@@ -567,7 +567,10 @@ export default function SuperAdminLojasView() {
       dispararToast('sucesso', `Login do dono salvo com sucesso para ${selectedTenant.nome}!`, 'Credenciais Atualizadas');
     } catch (err: any) {
       console.error('Erro ao salvar login do dono:', err);
-      const msg = err?.data?.message || err?.message || 'Falha ao salvar usuário no PocketBase.';
+      const fieldError = err?.data?.data?.password?.message || err?.data?.data?.email?.message;
+      const msg = fieldError 
+        ? `Validação: ${fieldError}` 
+        : (err?.data?.message || err?.message || 'Falha ao salvar usuário no PocketBase.');
       dispararToast('erro', msg, 'Erro ao Salvar');
     } finally {
       setSavingDonoLogin(false);
